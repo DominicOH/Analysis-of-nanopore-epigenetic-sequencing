@@ -6,3 +6,7 @@
 *.bed 
 *.bedMethyl
 *.tsv
+*.png
+feature_references/*
+test_data/*
+data/*
