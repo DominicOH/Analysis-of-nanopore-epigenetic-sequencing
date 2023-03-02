@@ -7,6 +7,8 @@
 *.bedMethyl
 *.tsv
 *.png
+*.cov
+*.gtf
 feature_references/*
 test_data/*
 data/*
