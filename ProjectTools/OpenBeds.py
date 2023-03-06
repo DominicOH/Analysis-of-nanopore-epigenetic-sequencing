@@ -13,25 +13,18 @@ def get_tab(path):
 
     return tab_df
 
-  def get_nanopore_5mc(path):
-    names = ["chromosome", "chromStart", "chromEnd", "modification_type", "score", "strand", "thickStart", "thickEnd", "RGB", "readCount", "percentMeth", "unmodifiedReads", "modifiedReads", "filteredReads"]
-    nanopore_df = pd.read_csv(path, sep="\t", names=names, index_col=False)
-    nanopore_df.drop(columns=["score", "thickStart", "thickEnd", "RGB", "strand", "unmodifiedReads", "modifiedReads", "filteredReads"], inplace=True)
-    nanopore_df["method"] = "Nanopore 5mC"
-    nanopore_df.dropna(inplace=True)
-   
-    return nanopore_df
+def get_nanopore_mods(path):
+    redundant_cols = ["score", "strand", "thickStart", "thickEnd", "RGB"]
+    nanopore_mod_df = pd.read_csv(path, sep="\t", index_col=False, names=names).drop(columns=redundant_cols)
+    nanopore_mod_df["trueReadCount"] = nanopore_mod_df["readCount"].sub(nanopore_mod_df["N_filtered"].add(nanopore_mod_df["N_noCall"]))
+    nanopore_mod_df["otherMod_percentMeth"] = nanopore_mod_df["N_other"].divide(nanopore_mod_df["trueReadCount"], axis=0, fill_value=None).round(4).multiply(100)
 
-def get_nanopore_5hmc(path):
-    names = ["chromosome", "chromStart", "chromEnd", "modification_type", "score", "strand", "thickStart", "thickEnd", "RGB", "readCount", "percentMeth", "unmodified_reads", "modified_reads", "filtered_reads", "nocall_reads"]
-    nanopore_hmc_df = pd.read_csv(path, sep="\t", names=names, index_col=False)
+    rename_dict = {"otherMod_percentMeth" : "percentMeth",
+                "trueReadCount" : "readCount"}
+    out_mod_df1 = nanopore_mod_df[["chromosome", "chromStart", "chromEnd", "trueReadCount", "percentMeth"]].rename(columns=rename_dict)
+    out_mod_df2 = nanopore_mod_df[["chromosome", "chromStart", "chromEnd", "trueReadCount", "otherMod_percentMeth"]].rename(columns=rename_dict)
 
-    nanopore_hmc_df.drop(columns=["score", "strand", "thickStart", "thickEnd", "RGB", "unmodified_reads", "modified_reads", "filtered_reads", "nocall_reads"], inplace=True)
-    nanopore_hmc_df["method"] = "Nanopore 5hmC"
-
-    nanopore_hmc_df.dropna(inplace=True)
-    
-    return nanopore_hmc_df
+    return out_mod_df1, out_mod_df2
 
 def get_wgbs(path): 
     names=["chromosome", "chromStart", "chromEnd", "strand", "readCount", "percentMeth"]
