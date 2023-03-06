@@ -13,7 +13,7 @@ def get_tab(path):
 
     return tab_df
 
-def get_nanopore_5mc(path):
+  def get_nanopore_5mc(path):
     names = ["chromosome", "chromStart", "chromEnd", "modification_type", "score", "strand", "thickStart", "thickEnd", "RGB", "readCount", "percentMeth", "unmodifiedReads", "modifiedReads", "filteredReads"]
     nanopore_df = pd.read_csv(path, sep="\t", names=names, index_col=False)
     nanopore_df.drop(columns=["score", "thickStart", "thickEnd", "RGB", "strand", "unmodifiedReads", "modifiedReads", "filteredReads"], inplace=True)
