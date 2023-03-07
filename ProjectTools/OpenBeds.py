@@ -24,7 +24,11 @@ def get_nanopore_twoMod(path):
     rename_dict = {"otherMod_percentMeth" : "percentMeth",
                 "trueReadCount" : "readCount"}
     
+
     out_mod_df = nanopore_mod_df[["chromosome", "chromStart", "chromEnd", "trueReadCount", "percentMeth"]].rename(columns=rename_dict)
+    out_mod_df["method"] = "Nanopore"
+    out_mod_df["modification_type"] = "5mC"
+
     return out_mod_df.dropna()
 
 
