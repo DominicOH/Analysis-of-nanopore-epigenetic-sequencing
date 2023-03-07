@@ -13,18 +13,39 @@ def get_tab(path):
 
     return tab_df
 
-def get_nanopore_mods(path):
+def get_nanopore_twoMod(path):
+    # Requires updates to Modbam2bed 0.9.1 -e 
+    # Requires rebasecalling two-modwise in Dorado 
+    names = ["chromosome", "chromStart", "chromEnd", "modification_type", "score", "strand", "thickStart", "thickEnd", "RGB", "readCount", "percentMeth", "N_unmod", "N_mod", "N_filtered"]
     redundant_cols = ["score", "strand", "thickStart", "thickEnd", "RGB"]
+    nanopore_mod_df = pd.read_csv(path, sep="\t", index_col=False, names=names).drop(columns=redundant_cols)
+    nanopore_mod_df["trueReadCount"] = nanopore_mod_df["readCount"].sub(nanopore_mod_df["N_filtered"])
+
+    rename_dict = {"otherMod_percentMeth" : "percentMeth",
+                "trueReadCount" : "readCount"}
+    
+    out_mod_df = nanopore_mod_df[["chromosome", "chromStart", "chromEnd", "trueReadCount", "percentMeth"]].rename(columns=rename_dict)
+    return out_mod_df.dropna()
+
+
+def get_nanopore_threeMod(path):
+    names = ["chromosome", "chromStart", "chromEnd", "modification_type", "score", "strand", "thickStart", "thickEnd", "RGB", "readCount", "percentMeth", "N_unmod", "N_mod", "N_filtered", "N_noCall", "N_other"]
+    redundant_cols = ["score", "strand", "thickStart", "thickEnd", "RGB"]
+
     nanopore_mod_df = pd.read_csv(path, sep="\t", index_col=False, names=names).drop(columns=redundant_cols)
     nanopore_mod_df["trueReadCount"] = nanopore_mod_df["readCount"].sub(nanopore_mod_df["N_filtered"].add(nanopore_mod_df["N_noCall"]))
     nanopore_mod_df["otherMod_percentMeth"] = nanopore_mod_df["N_other"].divide(nanopore_mod_df["trueReadCount"], axis=0, fill_value=None).round(4).multiply(100)
 
     rename_dict = {"otherMod_percentMeth" : "percentMeth",
                 "trueReadCount" : "readCount"}
+    
     out_mod_df1 = nanopore_mod_df[["chromosome", "chromStart", "chromEnd", "trueReadCount", "percentMeth"]].rename(columns=rename_dict)
     out_mod_df2 = nanopore_mod_df[["chromosome", "chromStart", "chromEnd", "trueReadCount", "otherMod_percentMeth"]].rename(columns=rename_dict)
 
-    return out_mod_df1, out_mod_df2
+    out_mod_df1["method"], out_mod_df2["method"] = "Nanopore", "Nanopore"
+    out_mod_df1["modification_type"], out_mod_df2["modification_type"] = "5mC", "5hmC"
+
+    return out_mod_df1.dropna(), out_mod_df2.dropna()
 
 def get_wgbs(path): 
     names=["chromosome", "chromStart", "chromEnd", "strand", "readCount", "percentMeth"]
