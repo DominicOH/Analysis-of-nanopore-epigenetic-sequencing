@@ -21,13 +21,16 @@ def get_nanopore_twoMod(path):
     nanopore_mod_df = pd.read_csv(path, sep="\t", index_col=False, names=names).drop(columns=redundant_cols)
     nanopore_mod_df["trueReadCount"] = nanopore_mod_df["readCount"].sub(nanopore_mod_df["N_filtered"])
 
-    rename_dict = {"otherMod_percentMeth" : "percentMeth",
-                "trueReadCount" : "readCount"}
+    rename_dict = {
+    "otherMod_percentMeth" : "percentMeth",
+    "trueReadCount" : "readCount",
+    "otherMod_method" : "method",
+    "otherMod_type" : "modification_type"}
     
+    nanopore_mod_df["method"] = "Nanopore 5mC"
+    nanopore_mod_df["modification_type"] = "5mC"
+    out_mod_df = nanopore_mod_df[["chromosome", "chromStart", "chromEnd", "modification_type", "trueReadCount", "percentMeth", "method"]].rename(columns=rename_dict)
 
-    out_mod_df = nanopore_mod_df[["chromosome", "chromStart", "chromEnd", "trueReadCount", "percentMeth"]].rename(columns=rename_dict)
-    out_mod_df["method"] = "Nanopore"
-    out_mod_df["modification_type"] = "5mC"
 
     return out_mod_df.dropna()
 
@@ -40,14 +43,17 @@ def get_nanopore_threeMod(path):
     nanopore_mod_df["trueReadCount"] = nanopore_mod_df["readCount"].sub(nanopore_mod_df["N_filtered"].add(nanopore_mod_df["N_noCall"]))
     nanopore_mod_df["otherMod_percentMeth"] = nanopore_mod_df["N_other"].divide(nanopore_mod_df["trueReadCount"], axis=0, fill_value=None).round(4).multiply(100)
 
-    rename_dict = {"otherMod_percentMeth" : "percentMeth",
-                "trueReadCount" : "readCount"}
-    
-    out_mod_df1 = nanopore_mod_df[["chromosome", "chromStart", "chromEnd", "trueReadCount", "percentMeth"]].rename(columns=rename_dict)
-    out_mod_df2 = nanopore_mod_df[["chromosome", "chromStart", "chromEnd", "trueReadCount", "otherMod_percentMeth"]].rename(columns=rename_dict)
+    nanopore_mod_df["method"], nanopore_mod_df["otherMod_method"] = "Nanopore 5mC", "Nanopore 5hmC"
+    nanopore_mod_df["modification_type"], nanopore_mod_df["otherMod_type"] = "5mC", "5hmC"
 
-    out_mod_df1["method"], out_mod_df2["method"] = "Nanopore", "Nanopore"
-    out_mod_df1["modification_type"], out_mod_df2["modification_type"] = "5mC", "5hmC"
+    rename_dict = {
+    "otherMod_percentMeth" : "percentMeth",
+    "trueReadCount" : "readCount",
+    "otherMod_method" : "method",
+    "otherMod_type" : "modification_type"}
+    
+    out_mod_df1 = nanopore_mod_df[["chromosome", "chromStart", "chromEnd", "modification_type", "trueReadCount", "percentMeth", "method"]].rename(columns=rename_dict)
+    out_mod_df2 = nanopore_mod_df[["chromosome", "chromStart", "chromEnd", "otherMod_type", "trueReadCount", "otherMod_percentMeth", "otherMod_method"]].rename(columns=rename_dict)
 
     return out_mod_df1.dropna(), out_mod_df2.dropna()
 
