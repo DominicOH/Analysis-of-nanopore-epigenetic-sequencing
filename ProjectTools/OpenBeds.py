@@ -1,17 +1,24 @@
 import pandas as pd
 
-def get_tab(path):
+def get_bismark(path, mod):
     names = ["chromosome", "chromStart", "chromEnd", "percentMeth", "modified_reads", "unmodified_reads"]
-    tab_df = pd.read_csv(path, 
+    df = pd.read_csv(path, 
                          sep="\t", 
                          names=names)
-    tab_df["readCount"] = tab_df[["modified_reads", "unmodified_reads"]].sum(axis=1)
-    tab_df["method"] = "TAB"
-    tab_df["modification_type"] = "5hmC"
+    df["readCount"] = df[["modified_reads", "unmodified_reads"]].sum(axis=1)
+    
+    if mod == "5hmC":
+        df["method"] = "TAB"
+        df["modification_type"] = "5hmC"
+    elif mod == "5mC":
+        df["method"] = "oxBS"
+        df["modification_type"] = "5mC"
+    else: 
+        raise ValueError("Please enter one of the compatible modification types: '5hmC' or '5mC'")
+    
+    df = df[["chromosome", "chromStart", "chromEnd", "modification_type", "readCount", "percentMeth", "method"]]
 
-    tab_df = tab_df[["chromosome", "chromStart", "chromEnd", "modification_type", "readCount", "percentMeth", "method"]]
-
-    return tab_df
+    return df
 
 def get_nanopore_twoMod(path):
     # Requires updates to Modbam2bed 0.9.1 -e 
