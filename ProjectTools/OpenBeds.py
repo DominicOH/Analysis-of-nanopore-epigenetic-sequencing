@@ -34,7 +34,7 @@ def get_nanopore_twoMod(path):
     "otherMod_method" : "method",
     "otherMod_type" : "modification_type"}
     
-    nanopore_mod_df["method"] = "Nanopore 5mC"
+    nanopore_mod_df["method"] = "Nanopore 2-state"
     nanopore_mod_df["modification_type"] = "5mC"
     out_mod_df = nanopore_mod_df[["chromosome", "chromStart", "chromEnd", "modification_type", "trueReadCount", "percentMeth", "method"]].rename(columns=rename_dict)
 
