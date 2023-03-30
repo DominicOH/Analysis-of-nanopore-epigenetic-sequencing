@@ -5,3 +5,4 @@ from .OpenBeds import get_nanopore_twoMod
 from .OpenBeds import get_bismark
 from .OpenBeds import get_wgbs
 from .OpenBeds import get_nanopore_threeMod_wStrand
+from .OpenBeds import *

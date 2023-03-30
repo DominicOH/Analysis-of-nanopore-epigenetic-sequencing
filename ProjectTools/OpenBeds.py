@@ -1,4 +1,5 @@
 import pandas as pd
+import math
 
 def get_bismark(path, mod):
     names = ["chromosome", "chromStart", "chromEnd", "percentMeth", "modified_reads", "unmodified_reads"]
@@ -96,3 +97,11 @@ def get_wgbs(path):
     wgbs_df["modification_type"] = "5mC"
     wgbs_df = wgbs_df[["chromosome", "chromStart", "chromEnd", "modification_type", "readCount", "percentMeth", "method"]] 
     return wgbs_df
+
+def filterDepth(df):
+    average = df["readCount"].mean()
+    df = df[df["readCount"].ge(10)]
+    df = df[df["readCount"].le(average + 3*math.sqrt(average))]
+    # df = df.loc[df["readCount"] == 15] # Testing constant readcount
+
+    return df
