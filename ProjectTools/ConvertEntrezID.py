@@ -22,5 +22,7 @@ def mergeClusters():
                                 ).as_df()
     output_cluster_df["symbol"] = output_cluster_df["symbol"].apply(lambda S: S.pop(0))
 
+    return output_cluster_df
+
 if __name__ == "__main__":
     mergeClusters().to_csv("./feature_references/genes/GENCODE_Basic_mm39_entrezConverted.bed", sep="\t", header=None, index=False)
