@@ -1,0 +1,5 @@
+#!/mnt/data1/doh28/analyses/mouse_hydroxymethylome_analysis/analysis_envs/GeneralAnalysisEnv/bin/python3.11
+
+import pydoc
+if __name__ == '__main__':
+    pydoc.cli()

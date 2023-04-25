@@ -1,0 +1,226 @@
+{
+  "build": "py311hba01205_0",
+  "build_number": 0,
+  "channel": "https://repo.anaconda.com/pkgs/main/linux-64",
+  "constrains": [],
+  "depends": [
+    "libgcc-ng >=11.2.0",
+    "libstdcxx-ng >=11.2.0",
+    "mkl >=2021.4.0,<2022.0a0",
+    "mkl-service >=2.3.0,<3.0a0",
+    "numpy >=1.22,<2.0a0",
+    "python >=3.11,<3.12.0a0",
+    "blas * mkl"
+  ],
+  "extracted_package_dir": "/u/n/doh28/.conda/pkgs/mkl_random-1.2.2-py311hba01205_0",
+  "features": "",
+  "files": [
+    "lib/python3.11/site-packages/mkl_random-1.2.2.dist-info/INSTALLER",
+    "lib/python3.11/site-packages/mkl_random-1.2.2.dist-info/LICENSE.txt",
+    "lib/python3.11/site-packages/mkl_random-1.2.2.dist-info/METADATA",
+    "lib/python3.11/site-packages/mkl_random-1.2.2.dist-info/RECORD",
+    "lib/python3.11/site-packages/mkl_random-1.2.2.dist-info/REQUESTED",
+    "lib/python3.11/site-packages/mkl_random-1.2.2.dist-info/WHEEL",
+    "lib/python3.11/site-packages/mkl_random-1.2.2.dist-info/direct_url.json",
+    "lib/python3.11/site-packages/mkl_random-1.2.2.dist-info/top_level.txt",
+    "lib/python3.11/site-packages/mkl_random/__init__.py",
+    "lib/python3.11/site-packages/mkl_random/__pycache__/__init__.cpython-311.pyc",
+    "lib/python3.11/site-packages/mkl_random/__pycache__/_version.cpython-311.pyc",
+    "lib/python3.11/site-packages/mkl_random/__pycache__/setup.cpython-311.pyc",
+    "lib/python3.11/site-packages/mkl_random/_version.py",
+    "lib/python3.11/site-packages/mkl_random/mkl_distributions.h",
+    "lib/python3.11/site-packages/mkl_random/mklrand.cpython-311-x86_64-linux-gnu.so",
+    "lib/python3.11/site-packages/mkl_random/randomkit.h",
+    "lib/python3.11/site-packages/mkl_random/setup.py",
+    "lib/python3.11/site-packages/mkl_random/tests/__init__.py",
+    "lib/python3.11/site-packages/mkl_random/tests/__pycache__/__init__.cpython-311.pyc",
+    "lib/python3.11/site-packages/mkl_random/tests/__pycache__/test_random.cpython-311.pyc",
+    "lib/python3.11/site-packages/mkl_random/tests/__pycache__/test_regression.cpython-311.pyc",
+    "lib/python3.11/site-packages/mkl_random/tests/test_random.py",
+    "lib/python3.11/site-packages/mkl_random/tests/test_regression.py"
+  ],
+  "fn": "mkl_random-1.2.2-py311hba01205_0.conda",
+  "legacy_bz2_md5": "6c9b75af787a746515d1213119715b45",
+  "license": "BSD-3-Clause",
+  "link": {
+    "source": "/u/n/doh28/.conda/pkgs/mkl_random-1.2.2-py311hba01205_0",
+    "type": 1
+  },
+  "md5": "17b14925bcdf83674749e62a663e6a6a",
+  "name": "mkl_random",
+  "package_tarball_full_path": "/u/n/doh28/.conda/pkgs/mkl_random-1.2.2-py311hba01205_0.conda",
+  "paths_data": {
+    "paths": [
+      {
+        "_path": "lib/python3.11/site-packages/mkl_random-1.2.2.dist-info/INSTALLER",
+        "path_type": "hardlink",
+        "sha256": "d0edee15f91b406f3f99726e44eb990be6e34fd0345b52b910c568e0eef6a2a8",
+        "sha256_in_prefix": "d0edee15f91b406f3f99726e44eb990be6e34fd0345b52b910c568e0eef6a2a8",
+        "size_in_bytes": 5
+      },
+      {
+        "_path": "lib/python3.11/site-packages/mkl_random-1.2.2.dist-info/LICENSE.txt",
+        "path_type": "hardlink",
+        "sha256": "955777b8b56b2286fd9402d2b34c9b454d3f3c82efb2953f16551eceac200c17",
+        "sha256_in_prefix": "955777b8b56b2286fd9402d2b34c9b454d3f3c82efb2953f16551eceac200c17",
+        "size_in_bytes": 1505
+      },
+      {
+        "_path": "lib/python3.11/site-packages/mkl_random-1.2.2.dist-info/METADATA",
+        "path_type": "hardlink",
+        "sha256": "dd409184dc336a8eced915c04a3748cf8035edb4c2f46df8ebf0cc681b35c1a1",
+        "sha256_in_prefix": "dd409184dc336a8eced915c04a3748cf8035edb4c2f46df8ebf0cc681b35c1a1",
+        "size_in_bytes": 418
+      },
+      {
+        "_path": "lib/python3.11/site-packages/mkl_random-1.2.2.dist-info/RECORD",
+        "path_type": "hardlink",
+        "sha256": "642e14524a05bb2b7b8ca5f42b134cbee8ff7fe8a8edcae72bf11a25df8e4cc2",
+        "sha256_in_prefix": "642e14524a05bb2b7b8ca5f42b134cbee8ff7fe8a8edcae72bf11a25df8e4cc2",
+        "size_in_bytes": 1803
+      },
+      {
+        "_path": "lib/python3.11/site-packages/mkl_random-1.2.2.dist-info/REQUESTED",
+        "path_type": "hardlink",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "sha256_in_prefix": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size_in_bytes": 0
+      },
+      {
+        "_path": "lib/python3.11/site-packages/mkl_random-1.2.2.dist-info/WHEEL",
+        "path_type": "hardlink",
+        "sha256": "4837a5c2ad366f4e9fc29964419be4cf51deea3c30234957ebb22ea0ea86beb7",
+        "sha256_in_prefix": "4837a5c2ad366f4e9fc29964419be4cf51deea3c30234957ebb22ea0ea86beb7",
+        "size_in_bytes": 105
+      },
+      {
+        "_path": "lib/python3.11/site-packages/mkl_random-1.2.2.dist-info/direct_url.json",
+        "path_type": "hardlink",
+        "sha256": "c3221da0452bba4f7a93a8c6c40b13b9fa41d05d967afdfacff27b7a397994c2",
+        "sha256_in_prefix": "c3221da0452bba4f7a93a8c6c40b13b9fa41d05d967afdfacff27b7a397994c2",
+        "size_in_bytes": 78
+      },
+      {
+        "_path": "lib/python3.11/site-packages/mkl_random-1.2.2.dist-info/top_level.txt",
+        "path_type": "hardlink",
+        "sha256": "4942b845967daa874f95c251a995ba8dead6079bf876c2010d6c34fae2792aff",
+        "sha256_in_prefix": "4942b845967daa874f95c251a995ba8dead6079bf876c2010d6c34fae2792aff",
+        "size_in_bytes": 11
+      },
+      {
+        "_path": "lib/python3.11/site-packages/mkl_random/__init__.py",
+        "path_type": "hardlink",
+        "sha256": "392c02968670908e9e994830e424faccab4cadef05cb949c5cc09093e39fbfb9",
+        "sha256_in_prefix": "392c02968670908e9e994830e424faccab4cadef05cb949c5cc09093e39fbfb9",
+        "size_in_bytes": 1999
+      },
+      {
+        "_path": "lib/python3.11/site-packages/mkl_random/__pycache__/__init__.cpython-311.pyc",
+        "path_type": "hardlink",
+        "sha256": "5b405f4c1e7a165eba56b199d788cc5832811712f768a17537e602585d090253",
+        "sha256_in_prefix": "5b405f4c1e7a165eba56b199d788cc5832811712f768a17537e602585d090253",
+        "size_in_bytes": 788
+      },
+      {
+        "_path": "lib/python3.11/site-packages/mkl_random/__pycache__/_version.cpython-311.pyc",
+        "path_type": "hardlink",
+        "sha256": "0610040a16d1fb0ac8b73dedbda6de9d68bfbc6b41acbc09e6b93f45affda15b",
+        "sha256_in_prefix": "0610040a16d1fb0ac8b73dedbda6de9d68bfbc6b41acbc09e6b93f45affda15b",
+        "size_in_bytes": 180
+      },
+      {
+        "_path": "lib/python3.11/site-packages/mkl_random/__pycache__/setup.cpython-311.pyc",
+        "path_type": "hardlink",
+        "sha256": "dd6ec43fb94024a0a21ea4a6927123209c438d65fccfd0a97634fa6bbc479753",
+        "sha256_in_prefix": "dd6ec43fb94024a0a21ea4a6927123209c438d65fccfd0a97634fa6bbc479753",
+        "size_in_bytes": 5083
+      },
+      {
+        "_path": "lib/python3.11/site-packages/mkl_random/_version.py",
+        "path_type": "hardlink",
+        "sha256": "4f2a09af97b7c844e97e7e82aa9e4ac29c1e8aa68335928a84aecded4f351954",
+        "sha256_in_prefix": "4f2a09af97b7c844e97e7e82aa9e4ac29c1e8aa68335928a84aecded4f351954",
+        "size_in_bytes": 22
+      },
+      {
+        "_path": "lib/python3.11/site-packages/mkl_random/mkl_distributions.h",
+        "path_type": "hardlink",
+        "sha256": "34ec1ba73db7a6c68379d9798c12ac1eb1f582ea875bdcc821d74c44e9ef68d5",
+        "sha256_in_prefix": "34ec1ba73db7a6c68379d9798c12ac1eb1f582ea875bdcc821d74c44e9ef68d5",
+        "size_in_bytes": 7973
+      },
+      {
+        "_path": "lib/python3.11/site-packages/mkl_random/mklrand.cpython-311-x86_64-linux-gnu.so",
+        "path_type": "hardlink",
+        "sha256": "53469413461c0e97895b0787e69350f5d244f324fcaf2ca7ef05ceaf824f7a74",
+        "sha256_in_prefix": "53469413461c0e97895b0787e69350f5d244f324fcaf2ca7ef05ceaf824f7a74",
+        "size_in_bytes": 972064
+      },
+      {
+        "_path": "lib/python3.11/site-packages/mkl_random/randomkit.h",
+        "path_type": "hardlink",
+        "sha256": "72651d3df13351a404573f1cc2e6c6059697c373846de2c762a33b97edde3f54",
+        "sha256_in_prefix": "72651d3df13351a404573f1cc2e6c6059697c373846de2c762a33b97edde3f54",
+        "size_in_bytes": 4801
+      },
+      {
+        "_path": "lib/python3.11/site-packages/mkl_random/setup.py",
+        "path_type": "hardlink",
+        "sha256": "4897a0c1174d0a09e388073896b240982cc739a1afe40220f29554e12e17e507",
+        "sha256_in_prefix": "4897a0c1174d0a09e388073896b240982cc739a1afe40220f29554e12e17e507",
+        "size_in_bytes": 5100
+      },
+      {
+        "_path": "lib/python3.11/site-packages/mkl_random/tests/__init__.py",
+        "path_type": "hardlink",
+        "sha256": "af2829ce5e2e655e1bdf3308d0d6536521831edd79606a9ef09aa4fad03bbcb2",
+        "sha256_in_prefix": "af2829ce5e2e655e1bdf3308d0d6536521831edd79606a9ef09aa4fad03bbcb2",
+        "size_in_bytes": 1572
+      },
+      {
+        "_path": "lib/python3.11/site-packages/mkl_random/tests/__pycache__/__init__.cpython-311.pyc",
+        "path_type": "hardlink",
+        "sha256": "b0ad64175ecfe202d93cca7a4cfd1cf4bdc3c1f16ad1c562429528871ba7ace9",
+        "sha256_in_prefix": "b0ad64175ecfe202d93cca7a4cfd1cf4bdc3c1f16ad1c562429528871ba7ace9",
+        "size_in_bytes": 166
+      },
+      {
+        "_path": "lib/python3.11/site-packages/mkl_random/tests/__pycache__/test_random.cpython-311.pyc",
+        "path_type": "hardlink",
+        "sha256": "e9ffd3857675df99032f6c93639c142c2249d6e1a42098dc06eddc51a54100b9",
+        "sha256_in_prefix": "e9ffd3857675df99032f6c93639c142c2249d6e1a42098dc06eddc51a54100b9",
+        "size_in_bytes": 73893
+      },
+      {
+        "_path": "lib/python3.11/site-packages/mkl_random/tests/__pycache__/test_regression.cpython-311.pyc",
+        "path_type": "hardlink",
+        "sha256": "ee6d7fd6bb5af166b1e7fd363c8c134dcafc1b76a0c78181d35d65fbdb8633d4",
+        "sha256_in_prefix": "ee6d7fd6bb5af166b1e7fd363c8c134dcafc1b76a0c78181d35d65fbdb8633d4",
+        "size_in_bytes": 10836
+      },
+      {
+        "_path": "lib/python3.11/site-packages/mkl_random/tests/test_random.py",
+        "path_type": "hardlink",
+        "sha256": "465f798c8f609eb0891c37137cca1e9c17dbd3a0625f6c5d1ef1f45d039830c9",
+        "sha256_in_prefix": "465f798c8f609eb0891c37137cca1e9c17dbd3a0625f6c5d1ef1f45d039830c9",
+        "size_in_bytes": 42388
+      },
+      {
+        "_path": "lib/python3.11/site-packages/mkl_random/tests/test_regression.py",
+        "path_type": "hardlink",
+        "sha256": "593654678d3e663076731e7b0f472a65f795acb55e3dab4200b269837d634ec6",
+        "sha256_in_prefix": "593654678d3e663076731e7b0f472a65f795acb55e3dab4200b269837d634ec6",
+        "size_in_bytes": 7176
+      }
+    ],
+    "paths_version": 1
+  },
+  "requested_spec": "None",
+  "sha256": "a4db01643a9552766bcbfac624e971d8c75b9b525467edc504bcaa4e5260992d",
+  "size": 295893,
+  "subdir": "linux-64",
+  "timestamp": 1676828066969,
+  "track_features": "",
+  "url": "https://repo.anaconda.com/pkgs/main/linux-64/mkl_random-1.2.2-py311hba01205_0.conda",
+  "version": "1.2.2"
+}

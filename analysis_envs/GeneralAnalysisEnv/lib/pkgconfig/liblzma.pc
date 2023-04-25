@@ -1,0 +1,19 @@
+#
+# Author: Lasse Collin
+#
+# This file has been put into the public domain.
+# You can do whatever you want with this file.
+#
+
+prefix=/mnt/data1/doh28/analyses/mouse_hydroxymethylome_analysis/analysis_envs/GeneralAnalysisEnv
+exec_prefix=/mnt/data1/doh28/analyses/mouse_hydroxymethylome_analysis/analysis_envs/GeneralAnalysisEnv
+libdir=/mnt/data1/doh28/analyses/mouse_hydroxymethylome_analysis/analysis_envs/GeneralAnalysisEnv/lib
+includedir=/mnt/data1/doh28/analyses/mouse_hydroxymethylome_analysis/analysis_envs/GeneralAnalysisEnv/include
+
+Name: liblzma
+Description: General purpose data compression library
+URL: https://tukaani.org/xz/
+Version: 5.2.10
+Cflags: -I${includedir}
+Libs: -L${libdir} -llzma
+Libs.private: -pthread -lpthread
