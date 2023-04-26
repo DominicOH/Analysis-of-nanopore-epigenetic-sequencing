@@ -9,6 +9,7 @@
 *.png
 *.cov
 *.gtf
+*.bw
 feature_references/*
 test_data/*
 data/*
