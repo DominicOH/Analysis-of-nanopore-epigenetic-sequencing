@@ -89,7 +89,7 @@ def get_nanopore_threeMod_wStrand(path):
     return out_mod_df1.dropna(), out_mod_df2.dropna()
 
 def get_wgbs(path): 
-    names=["chromosome", "chromStart", "chromEnd", "strand", "readCount", "percentMeth"]
+    names=["chromosome", "chromStart", "chromEnd", "readCount", "percentMeth", "strand"]
     wgbs_df = pd.read_csv(path, 
                         names=names, 
                         sep="\t")
