@@ -95,7 +95,7 @@ def get_wgbs(path):
                         sep="\t")
     wgbs_df["method"] = "WGBS"
     wgbs_df["modification_type"] = "5mC"
-    wgbs_df = wgbs_df[["chromosome", "chromStart", "chromEnd", "modification_type", "readCount", "percentMeth", "method"]] 
+    wgbs_df = wgbs_df[["chromosome", "chromStart", "chromEnd", "strand", "modification_type", "readCount", "percentMeth", "method"]] 
     return wgbs_df
 
 def filterDepth(df):
