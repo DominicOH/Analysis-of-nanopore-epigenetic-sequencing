@@ -1,8 +1,8 @@
 # __init__.py
 
-from .OpenBeds import get_nanopore_threeMod
-from .OpenBeds import get_nanopore_twoMod
-from .OpenBeds import get_bismark
-from .OpenBeds import get_wgbs
-from .OpenBeds import get_nanopore_threeMod_wStrand
-from .OpenBeds import *
+from .common import get_nanopore_threeMod
+from .common import get_nanopore_twoMod
+from .common import get_bismark
+from .common import get_wgbs
+from .common import get_nanopore_threeMod_wStrand
+from .common import *
