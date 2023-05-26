@@ -1,140 +1,12 @@
 import pandas as pd
-import pyranges as pr
-import subprocess
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+import pyranges as pr
 from FeatureReferences import *
+from CpGIntersects import CpGIntersects
 from scipy import stats
-
-def geneRefPyRange():
-    gene_ref_path = './feature_references/revised/GENCODE_Basic_mm39_Genes_merged.bed'
-    df = pd.read_csv(gene_ref_path, sep="\t", names=["Chromosome", "Start", "End", "Name", "Strand"])
-    return pr.PyRanges(df).unstrand()
-
-def barplotRefPyRange():
-    gene_feature_list = subprocess.check_output(["ls", "./feature_references/revised/gene_features/name_adjusted/"]).decode("utf-8").split("\n") 
-    gene_feature_list.pop(-1)
-
-    df_list = []
-    for file in gene_feature_list:
-        path = "./feature_references/revised/gene_features/name_adjusted/" + file
-        feature_tsv = Features(path)
-        feature_df = feature_tsv.toDF()
-        df_list.append(feature_df)
-
-    feature_reference_df = pd.concat(df_list).drop(columns=["Score"])
-    return pr.PyRanges(feature_reference_df)
-
-def CGIrefPyRange():
-    cgi_feature_list = subprocess.check_output(["ls", "./feature_references/revised/cgi/named/"]).decode("utf-8").split("\n") 
-    cgi_feature_list.pop(-1)
-
-    cgi_df_list = []
-    for file in cgi_feature_list:
-        path = "./feature_references/revised/cgi/named/" + file
-        cgi_tsv = CGIs(path)
-        cgi_df = cgi_tsv.toDF()
-        cgi_df_list.append(cgi_df)
-
-    cgi_reference_df = pd.concat(cgi_df_list)
-    return pr.PyRanges(cgi_reference_df)
-
-class CpGIntersects(pr.PyRanges):
-    """
-    Main class for feature/gene level comparison. Inherits from PyRange. 
-    """
-    def __init__(self, df):
-        super().__init__(df, df)
-
-    def intersectGenes(self):
-        """
-        Intersects CpGs with genes. Based on gene start/end coordinates in the GENCODE Basic reference build. 
-        """
-        gene_ref_pr = geneRefPyRange()
-        df_with_genes = self.join(gene_ref_pr, slack=0).as_df()
-        df_with_genes["feature_type"] = "Gene"
-        return  df_with_genes
-    
-    def intersectFeatures(self):
-        """
-        Intersects CpGs with genomic features. Output is a dataframe-type object. 
-        """
-        feature_ref = barplotRefPyRange().unstrand()
-        df_with_features = self.join(feature_ref, slack=0).as_df()
-        categories = ["Intergenic", "Promoter", "5UTR", "TSS", "Intron", "Exon", "3UTR", "TTS"]
-        df_with_features["feature_type"] = pd.Categorical(df_with_features["feature_type"], categories)
-
-        return  df_with_features
-    
-    def intersectCpGIslands(self):
-        """
-        Intersects CpGs with CpG islands. Islands are broken into island feature (i.e.: shelf, shore). 
-        """
-        cgi_ref = CGIrefPyRange().unstrand()
-        df_with_cgis = self.join(cgi_ref, slack=0).as_df()
-        categories = ["Open sea", "Upstream shelf", "Upstream shore", "CGI", "Downstream shore", "Downstream shelf"]
-        df_with_cgis["feature_type"] = pd.Categorical(df_with_cgis["feature_type"], categories)
-
-        return  df_with_cgis
-    
-    def groupByGenomicWindow(self, window_size):
-        """
-        Groups CpGs based according to 1kb windows ("tiles"), using the average (mean) hydroxymethlyation of CpGs within those windows. Output is distinct from the grouping function below as the chromosomal coordinates are actually what defines each cluster. 
-        """
-        tiled_pr = self.tile(window_size, strand=False).cluster(slack=-1, strand=False)
-        cluster_pr = tiled_pr.merge(slack=-1, count=True, strand=False)
-        cluster_pr = cluster_pr.insert(
-            tiled_pr.apply(
-            f=lambda df: df.groupby("Cluster")[["percentMeth_Nanopore_5hmC", "percentMeth_Bisulphite_5hmC"]].mean(), 
-            as_pyranges=False, strand=False
-            )
-            )
-        cluster_df = cluster_pr.as_df()
-        return cluster_df.rename(columns={
-            "percentMeth_Bisulphite_5hmC" : "percentMeth_TAB",
-            "percentMeth_Nanopore_5hmC" : "percentMeth_Nanopore",
-            "Count": "CpG_count"}
-            )
-    
-    def group(self, intersect_with):
-        """
-        Groups CpGs based on intersects.
-        """
-        if intersect_with == "other":
-            intersect_df = self.df
-        elif intersect_with == "features" or intersect_with == "Features":
-            intersect_df = self.intersectFeatures()
-        elif intersect_with == "CGI" or intersect_with == "islands":
-            intersect_df = self.intersectCpGIslands()
-        elif intersect_with == "genes" or intersect_with == "Genes":
-            intersect_df = self.intersectGenes()
-        else: 
-            raise ValueError("Please input appropriate element to intersect with. ['genes', 'features', or 'CGI']")
-        
-        groupby_df = intersect_df.groupby(["Name", "feature_type", "Start_b", "End_b"], 
-                                          observed=True).agg(
-            {"percentMeth_Nanopore_5hmC" : "mean",
-             "percentMeth_Bisulphite_5hmC" : "mean",
-             "Start" : "count"}
-             ).reset_index()
-        groupby_df.rename(columns={"Start" : "CpG_count",
-                                   "Start_b" : "group_start",
-                                   "End_b" : "group_end",
-                                   "percentMeth_Bisulphite_5hmC" : "percentMeth_TAB",
-                                   "percentMeth_Nanopore_5hmC" : "percentMeth_Nanopore"}, 
-                                   inplace=True)
-
-        return  groupby_df
-       
-    def calculateMethodMean(self):
-        df = self.as_df()
-
-        mean_dict = {"bisulphite_mean" : df["percentMeth_Bisulphite_5hmC"].mean(),
-                     "nanopore_mean" : df["percentMeth_Nanopore_5hmC"].mean()}
-
-        return mean_dict
-    
+   
 class groupedDF:
     """
     Dataframe-type objects where CpG positions are grouped. Child classes contain additional functionality. Contains interface for relevant Seaborn plotting functions.  
@@ -212,3 +84,140 @@ class groupedDF:
         hist = sns.histplot(df, x="Log2FromMean_TAB", y="Log2FromMean_Nanopore", cbar=True, cbar_kws={"label" : f"{stat}".capitalize()}, stat=stat, ax=ax)
 
         return hist
+    
+class featureAndGene(groupedDF):
+    """
+    Dataframe-like objects where CpG sites are grouped by gene, genomic feature, or CpG island. 
+    """
+    def __init__(self, df, cpg_threshold=None):
+        super().__init__(df)
+        self.cpg_threshold = cpg_threshold
+
+    def __asLongDf(self):
+        """
+        Converts the DF from a wide-form to a longer form. 
+        """
+        df = self.df
+
+        stubs = ["percentMeth"]
+        indices = ["Name", "group_start", "group_end"]
+        
+        return pd.wide_to_long(df, stubs, indices, "method", sep="_", suffix="\D+").reset_index()
+    
+    def makeLineplot(self, ax=None):
+        df = self.__asLongDf()
+
+        if not ax:
+            fig, ax = plt.subplots()
+        
+        lineplot = sns.lineplot(df, x="feature_type", y="percentMeth", hue="method", errorbar=("pi", 50), estimator="median", ax=ax)
+        return lineplot
+    
+    def makeBarplot(self, ax=None):
+        df = self.__asLongDf()
+
+        if not ax:
+            fig, ax = plt.subplots()
+        
+        barplot = sns.barplot(df, x="feature_type", y="percentMeth", hue="method", errorbar=("pi", 50),  estimator="median", capsize=0.1, errwidth=1, palette="Paired", ax=ax)
+        return barplot
+
+    def makeBoxplots(self, ax=None):
+        df = self.__asLongDf()
+
+        if not ax:
+            fig, ax = plt.subplots()
+        
+        boxplot = sns.boxplot(df, x="feature_type", y="percentMeth", hue="method", width=0.8, fliersize=0.005, ax=ax)
+        return boxplot
+
+class tiledGroup(groupedDF):
+    """
+    Dataframe-like objects where CpG sites are grouped by genomic window or tile. 
+    """
+    def __init__(self, df, cpg_threshold):
+        super().__init__(df, cpg_threshold)
+
+    def positiveControlGroupDF(self, number_target_tiles):
+        """
+        Returns the positive control group - entries enriched in both methods.
+        """
+        df = super().methodComparison()
+        df = df.nlargest(50, "Average")
+        df = df.nsmallest(number_target_tiles, "Difference")
+        return tiledGroup(df, self.cpg_threshold)
+    
+    def NegativeControlGroupDF(self, number_target_tiles):
+        """
+        Returns the negative control group - entries not enriched in either method.
+        """
+        df = self.methodComparison()
+        df = df.nsmallest(50, "Average")
+        df = df.nsmallest(number_target_tiles, "Difference")
+        return tiledGroup(df, self.cpg_threshold)
+
+    def NanoporePositiveGroupDF(self, number_target_tiles):
+        """
+        Returns the Nanopore positive test group - entries enriched only in Nanopore.
+        """
+        df = self.methodComparison()
+        df = df.loc[df["Log2FromMean_TAB"] <= 0]
+        df = df.nlargest(number_target_tiles, "Log2FromMean_Nanopore")
+        return tiledGroup(df, self.cpg_threshold)
+    
+    def TabPositiveGroupDF(self, number_target_tiles):
+        """
+        Returns the TAB positive test group - entries enriched only in TAB.
+        """
+        df = self.methodComparison()
+        df = df = df.loc[df["Log2FromMean_Nanopore"] <= 0]
+        df = df.nlargest(number_target_tiles, "Log2FromMean_TAB")
+        return tiledGroup(df, self.cpg_threshold)
+    
+    def getSequences(self):
+        pyrange = pr.PyRanges(self.df)
+        ref_fa = './data/Reference_data/mm39.fa'
+
+        sequences = pr.get_sequence(pyrange, ref_fa)
+        sequences.name = "sequence"
+
+        pyrange = pyrange.insert(sequences)       
+        return tiledGroup(pyrange.as_df(), self.cpg_threshold)
+    
+    def getIGVcoords(self):
+        df = self.df
+        coordinates = []
+        for line, value in df.iterrows():
+            chrom = value[0]
+            s = str(value[1])
+            e = str(value[2])
+            first_half = ":".join([chrom, s])
+            coord = "-".join([first_half, e])
+            coordinates.append(coord)
+        df["coordinates"] = coordinates
+        return tiledGroup(df, self.cpg_threshold)
+    
+    def __reorderDF(self):
+        df = self.df
+        return df[["coordinates", "CpG_count", "percentMeth_Nanopore", "percentMeth_Bisulphite", "Log2FromMean_TAB", "Log2FromMean_Nanopore", "Average", "Difference",  "sequence"]]
+
+    def exportTests(self, number_target_tiles):
+        wr = pd.ExcelWriter('/u/n/doh28/Documents/Nanopore_HMC/primer_design_regions.xlsx')
+
+        list_of_groups = [self.NanoporePositiveGroupDF(number_target_tiles), self.TabPositiveGroupDF(number_target_tiles), self.positiveControlGroupDF(number_target_tiles), self.NegativeControlGroupDF(number_target_tiles)]
+        processed_groups = [group.getSequences().getIGVcoords().__reorderDF() for group in list_of_groups]
+        list_of_names = ["Nanopore_positive", "TAB_positive", "Positive_ctrl", "Negative_ctrl"]
+
+        for i in np.arange(0, 4):
+            processed_groups[i].to_excel(wr, list_of_names[i], index=False)
+
+        wr.close()
+        return 
+    
+    def tileWithLogCols(self):
+        df = super().dfWithLogCols()
+        return tiledGroup(df, self.cpg_threshold)
+    
+    def asCpGIntersect(self):
+        df = self.df
+        return CpGIntersects(df)
