@@ -50,9 +50,9 @@ class Checkpoint:
             colnames.extend(["method", "strand", "readCount", "percentMeth"])
         elif len(first_line) == 8:
             if self.path.__contains__("three_state"): # adds another condition accounting for files containing all mod states
-                colnames.extend(["strand", "percentMeth_Bisulphite_5mC", "percentMeth_Nanopore_5mC", "percentMeth_Bisulphite_5hmC", "percentMeth_Nanopore_5hmC"])
-            else: 
-                colnames.extend(["strand", "readCount_Bisulphite", "percentMeth_Bisulphite", "readCount_Nanopore", "percentMeth_Nanopore"])
+                colnames.extend(["strand", "percentMeth_oxBS_5mC", "percentMeth_Nanopore_5mC", "percentMeth_TAB_5hmC", "percentMeth_Nanopore_5hmC"])
+            elif self.path.__contains__("two_mod"): 
+                colnames.extend(["strand", "readCount_WGBS", "percentMeth_WGBS", "readCount_Nanopore", "percentMeth_Nanopore"])
         else:
             raise ValueError("Check file headers.")
         return colnames
