@@ -7,7 +7,7 @@ from FeatureReferences import *
 from CpGIntersects import CpGIntersects
 from scipy import stats
    
-class groupedDF:
+class GroupedDF:
     """
     Dataframe-type objects where CpG positions are grouped. Child classes contain additional functionality. Contains interface for relevant Seaborn plotting functions.  
     """
@@ -25,8 +25,8 @@ class groupedDF:
         with np.errstate(divide="ignore"):
             filtered_df["Log2FromMean_TAB"] = np.log2(
                 np.divide(
-                filtered_df["percentMeth_Bisulphite"],
-                filtered_df["percentMeth_Bisulphite"].mean()
+                filtered_df["percentMeth_TAB"],
+                filtered_df["percentMeth_TAB"].mean()
                 )
                 )
 
@@ -85,7 +85,7 @@ class groupedDF:
 
         return hist
     
-class featureAndGene(groupedDF):
+class FeatureAndGene(GroupedDF):
     """
     Dataframe-like objects where CpG sites are grouped by gene, genomic feature, or CpG island. 
     """
@@ -131,7 +131,7 @@ class featureAndGene(groupedDF):
         boxplot = sns.boxplot(df, x="feature_type", y="percentMeth", hue="method", width=0.8, fliersize=0.005, ax=ax)
         return boxplot
 
-class tiledGroup(groupedDF):
+class tiledGroup(GroupedDF):
     """
     Dataframe-like objects where CpG sites are grouped by genomic window or tile. 
     """
@@ -199,7 +199,7 @@ class tiledGroup(groupedDF):
     
     def __reorderDF(self):
         df = self.df
-        return df[["coordinates", "CpG_count", "percentMeth_Nanopore", "percentMeth_Bisulphite", "Log2FromMean_TAB", "Log2FromMean_Nanopore", "Average", "Difference",  "sequence"]]
+        return df[["coordinates", "CpG_count", "percentMeth_Nanopore", "percentMeth_TAB", "Log2FromMean_TAB", "Log2FromMean_Nanopore", "Average", "Difference",  "sequence"]]
 
     def exportTests(self, number_target_tiles):
         wr = pd.ExcelWriter('/u/n/doh28/Documents/Nanopore_HMC/primer_design_regions.xlsx')

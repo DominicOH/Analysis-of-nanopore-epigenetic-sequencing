@@ -33,9 +33,10 @@ class Features(Reference):
     Regularly used object type containing information about genomic features. May be a tab-separated variables (TSV) file. Columns must contain follow BED 'Chromosome', 'Start', 'End', 'Name' format. 
     """
 
-    def __init__(self, path, dataframe=None):
+    def __init__(self, path):
         super().__init__(path)
-        self.dataframe = dataframe
+        self.dataframe = pd.read_csv(self.path, sep="\t", names=self.getColNames())
+        self.dataframe["feature_type"] = self.retrieveFeatureType()
    
     def getColNames(self):
         """
@@ -65,16 +66,6 @@ class Features(Reference):
             return feature_type.strip(".bed")
         except:
             return feature_type
-    
-    def toDF(self):
-        """
-        Shows the feature file as a pandas DataFrame.
-        """
-        if not self.dataframe:
-            df = pd.read_csv(self.path, sep="\t", names=self.getColNames())
-            df["feature_type"] = self.retrieveFeatureType()
-            self.dataframe = df
-        return df
 
 class CGIs(Reference):
     """
