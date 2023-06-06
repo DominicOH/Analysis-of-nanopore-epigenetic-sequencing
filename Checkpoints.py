@@ -49,10 +49,15 @@ class Checkpoint:
             # long dataframe
             colnames.extend(["method", "strand", "readCount", "percentMeth"])
         elif len(first_line) == 8:
-            if self.path.__contains__("three_state"): # adds another condition accounting for files containing all mod states
-                colnames.extend(["strand", "percentMeth_oxBS_5mC", "percentMeth_Nanopore_5mC", "percentMeth_TAB_5hmC", "percentMeth_Nanopore_5hmC"])
-            elif self.path.__contains__("two_mod"): 
+            if self.path.__contains__("two_mod"): 
                 colnames.extend(["strand", "readCount_WGBS", "percentMeth_WGBS", "readCount_Nanopore", "percentMeth_Nanopore"])
+            elif self.path.__contains__("mc") and not self.path.__contains__("hmc"):
+                colnames.extend(["strand", "readCount_oxBS_5mC", "percentMeth_oxBS_5mC", "readCount_Nanopore_5mC", "percentMeth_Nanopore_5mC"])
+            elif self.path.__contains__("hmc"):
+                colnames.extend(["strand", "readCount_TAB_5hmC", "percentMeth_TAB_5hmC", "readCount_Nanopore_5hmC", "percentMeth_Nanopore_5hmC"])
+            else:
+                colnames.extend(["strand", "percentMeth_oxBS_5mC", "percentMeth_Nanopore_5mC", "percentMeth_TAB_5hmC", "percentMeth_Nanopore_5hmC"])
+            
         else:
             raise ValueError("Check file headers.")
         return colnames
