@@ -68,12 +68,12 @@ class ROCPlot:
         fpr, tpr, threshold = metrics.roc_curve(binarised_df["binarised"], binarised_df.iloc[:, 7])
         return fpr, tpr
     
-    def plotROC(self, ax, label):
+    def plotROC(self, ax, label, ls):
         """
         Uses the methods above to plot a ROC curve on a given ax. 
         """
         fpr, tpr = self.ROC()
-        return ax.plot(fpr, tpr, "-", label=label, lw=2)
+        return ax.plot(fpr, tpr, label=label, lw=2, ls=ls)
     
     def calculateAUC(self):
         """
