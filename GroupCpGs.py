@@ -81,7 +81,7 @@ class GroupedDF:
         if not ax:
             fig, ax = plt.subplots()
 
-        hist = sns.histplot(df, x="Log2FromMean_TAB", y="Log2FromMean_Nanopore", cbar=True, cbar_kws={"label" : f"{stat}".capitalize()}, stat=stat, ax=ax)
+        hist = sns.histplot(df, x="Log2FromMean_TAB", y="Log2FromMean_Nanopore", stat=stat, ax=ax)
 
         return hist
     
@@ -119,7 +119,7 @@ class FeatureAndGene(GroupedDF):
         if not ax:
             fig, ax = plt.subplots()
         
-        barplot = sns.barplot(df, x="feature_type", y="percentMeth", hue="method", errorbar=("pi", 50),  estimator="median", capsize=0.1, errwidth=1, palette="Paired", ax=ax)
+        barplot = sns.barplot(df, x="feature_type", y="percentMeth", hue="method", errorbar=("pi", 50),  estimator="median", capsize=0.1, errwidth=1, ax=ax)
         return barplot
 
     def makeBoxplots(self, ax=None):

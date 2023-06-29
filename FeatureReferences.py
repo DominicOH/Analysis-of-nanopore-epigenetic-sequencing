@@ -66,6 +66,9 @@ class Features(Reference):
             return feature_type.strip(".bed")
         except:
             return feature_type
+        
+    def toDF(self):
+        return self.dataframe
 
 class CGIs(Reference):
     """
