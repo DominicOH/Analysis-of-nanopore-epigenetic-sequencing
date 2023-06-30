@@ -75,13 +75,13 @@ class GroupedDF:
                                   df["Log2FromMean_Nanopore"], 
                                   alternative=alternative)
     
-    def makeHist(self, stat, ax=None):
+    def makeHist(self, stat, ax=None, cax=None):
         df = self.dfWithLogCols()
 
         if not ax:
             fig, ax = plt.subplots()
 
-        hist = sns.histplot(df, x="Log2FromMean_TAB", y="Log2FromMean_Nanopore", stat=stat, ax=ax)
+        hist = sns.histplot(df, x="Log2FromMean_TAB", y="Log2FromMean_Nanopore", cbar=True, cbar_ax=cax, stat=stat, ax=ax)
 
         return hist
     
