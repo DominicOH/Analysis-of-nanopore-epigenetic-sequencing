@@ -4,13 +4,13 @@ import numpy as np
 from sklearn import preprocessing
 from sklearn import metrics
 
-def linePlot(df, ax, reverse=False, label=None):
+def linePlot(df, ax, reverse=False, label=None, ls=None):
     if reverse:
         df["Bins"] = pd.cut(df.iloc[:, 7], 101, labels=np.arange(0, 101, 1))
-        return sns.lineplot(df, x="Bins", y=df.iloc[:, 5], errorbar=("pi", 50), estimator="median", label=label, ls="-", legend="brief", ax=ax)
+        return sns.lineplot(df, x="Bins", y=df.iloc[:, 5], errorbar=("pi", 50), estimator="median", label=label, ls=ls, legend="brief", ax=ax)
     else:
         df["Bins"] = pd.cut(df.iloc[:, 5], 101, labels=np.arange(0, 101, 1))
-        return sns.lineplot(df, x="Bins", y=df.iloc[:, 7], errorbar=("pi", 50), estimator="median", label=label, ls="-", legend="brief", ax=ax)
+        return sns.lineplot(df, x="Bins", y=df.iloc[:, 7], errorbar=("pi", 50), estimator="median", label=label, ls=ls, legend="brief", ax=ax)
     
         
 class ROCPlot:
