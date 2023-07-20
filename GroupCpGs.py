@@ -13,6 +13,9 @@ class GroupedDF:
     """
     def __init__(self, df, cpg_threshold=None):
         self.df = df
+        if "percentMeth_TAB_5hmC" in self.df.columns:
+            self.df.rename(columns={"percentMeth_TAB_5hmC" : "percentMeth_TAB"}, inplace=True)
+            
         self.cpg_threshold = cpg_threshold
       
     def dfWithLogCols(self):
@@ -93,19 +96,22 @@ class FeatureAndGene(GroupedDF):
         super().__init__(df)
         self.cpg_threshold = cpg_threshold
 
-    def __asLongDf(self):
+    def asLongDf(self):
         """
         Converts the DF from a wide-form to a longer form. 
         """
-        df = self.df
+        cdf = self.df.copy()
+
+        if "percentMeth_TAB_5hmC" in cdf.columns:
+            cdf.rename(columns={"percentMeth_TAB_5hmC" : "percentMeth_TAB"}, inplace=True)
 
         stubs = ["percentMeth"]
         indices = ["Name", "group_start", "group_end"]
         
-        return pd.wide_to_long(df, stubs, indices, "method", sep="_", suffix="\D+").reset_index()
+        return pd.wide_to_long(cdf, stubs, indices, "method", sep="_", suffix="\D+").reset_index()
     
     def makeLineplot(self, ax=None):
-        df = self.__asLongDf()
+        df = self.asLongDf()
 
         if not ax:
             fig, ax = plt.subplots()
@@ -114,7 +120,7 @@ class FeatureAndGene(GroupedDF):
         return lineplot
     
     def makeBarplot(self, ax=None):
-        df = self.__asLongDf()
+        df = self.asLongDf()
 
         if not ax:
             fig, ax = plt.subplots()
@@ -123,7 +129,7 @@ class FeatureAndGene(GroupedDF):
         return barplot
 
     def makeBoxplots(self, ax=None):
-        df = self.__asLongDf()
+        df = self.asLongDf()
 
         if not ax:
             fig, ax = plt.subplots()
