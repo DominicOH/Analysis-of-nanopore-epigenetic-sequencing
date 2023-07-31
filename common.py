@@ -78,26 +78,29 @@ def filterDepth(df):
     average = df["readCount"].mean()
     df = df[df["readCount"].ge(10)]
     df = df[df["readCount"].le(average + 3*sqrt(average))]
-    # df = df.loc[df["readCount"] == 15] # Testing constant readcount
 
     return df
 
-def filterReadCountNanopore(df):
-    mean = df.loc[:, "readCount_T"].mean() 
-    max_depth = mean + 3*sqrt(mean) 
-    filtered = df.loc[(df.loc[:, "readCount_T"] >= 10) & (df.loc[:, "readCount_T"] <= max_depth)]
-    return filtered
-
-def readModbam2bedTernary(path): 
+def readModbam2bedTernary(path):
+    """
+    Opens Modbam2bed bedMethyl files in an appropriate format for this analysis. 
+    
+    Note: Requires modbam2bed extended output with options: -e --cpg -m 5mC (other mod is assumed to be 5hmC)
+    """
     modbed = pd.read_csv(path, sep="\t", 
                 names=["chromosome", "chromStart", "chromEnd", "mod_type", "score", "strand", "i1", "i2", "i3", "readCount", "percentMeth_mC", "N_C", "N_mC", "N_filt", "N_NA", "N_hmC"])
     modbed["readCount_T"] = modbed.loc[:, ("N_C", "N_mC", "N_hmC")].sum(axis="columns")
-    modbed = filterReadCountNanopore(modbed)
-    modbed["percentMeth_C"] = modbed.loc[:, "N_C"].divide(modbed.loc[:, "readCount_T"]).multiply(100)
-    modbed["percentMeth_hmC"] = modbed.loc[:, "N_hmC"].divide(modbed.loc[:, "readCount_T"]).multiply(100)
-    modbed["percentMeth_mC"] = modbed.loc[:, "N_mC"].divide(modbed.loc[:, "readCount_T"]).multiply(100)
 
-    return modbed.loc[:, ("chromosome", "chromStart", "chromEnd", "strand", "readCount_T", "percentMeth_C", "percentMeth_mC", "percentMeth_hmC")]
+    modbed.drop(columns="readCount", inplace=True)
+    modbed.rename(columns={"readCount_T" : "readCount"}, inplace=True)
+
+    modbed = filterDepth(modbed)
+
+    modbed["percentMeth_C"] = modbed.loc[:, "N_C"].divide(modbed.loc[:, "readCount"]).multiply(100)
+    modbed["percentMeth_5hmC"] = modbed.loc[:, "N_hmC"].divide(modbed.loc[:, "readCount"]).multiply(100)
+    modbed["percentMeth_5mC"] = modbed.loc[:, "N_mC"].divide(modbed.loc[:, "readCount"]).multiply(100)
+
+    return modbed.loc[:, ("chromosome", "chromStart", "chromEnd", "strand", "readCount", "percentMeth_C", "percentMeth_5mC", "percentMeth_5hmC")]
 
 def changeColNamesForPR(df):
     assert "chromosome" and "chromStart" in df.columns
@@ -105,7 +108,8 @@ def changeColNamesForPR(df):
     out_df = df.copy()
     out_df.rename(columns={
         "chromosome" : "Chromosome", 
-        "chromStart" : "Start"
+        "chromStart" : "Start",
+        "percentMeth_TAB_5hmC" : "percentMeth_Bisulphite_5hmC"
     }, inplace=True)
 
     if not "chromEnd" in out_df.columns:

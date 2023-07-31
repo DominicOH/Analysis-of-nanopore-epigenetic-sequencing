@@ -18,29 +18,31 @@ class GroupedDF:
             
         self.cpg_threshold = cpg_threshold
       
-    def dfWithLogCols(self):
+    def dfWithLogCols(self, include_zeros=False):
         """
         Adds columns indicating the log2scale enrichment/depletion of grouped CpG sites relative to the mean of each method. 
+
+        1 is added to the ratio of the group mean to the genomic mean to avoid ratios of 0 and resulting NaNs. 
         """
         filtered_df = self.df.copy()
         filtered_df = filtered_df.loc[filtered_df["CpG_count"].ge(self.cpg_threshold)] # filters out groups with fewer than 'cpg_threshold' CpGs present in either dataset. 
 
+        if not include_zeros:
+            add = 0
+        else: 
+            add = 1
+
         with np.errstate(divide="ignore"):
             filtered_df["Log2FromMean_TAB"] = np.log2(
-                np.divide(
-                filtered_df["percentMeth_TAB"],
-                filtered_df["percentMeth_TAB"].mean()
-                )
+                np.add(add, np.divide(filtered_df["percentMeth_TAB"], filtered_df["percentMeth_TAB"].mean()))
                 )
 
             filtered_df["Log2FromMean_Nanopore"] = np.log2(
-                np.divide(
-                filtered_df["percentMeth_Nanopore"],
-                filtered_df["percentMeth_Nanopore"].mean()
-                )
+                np.add(add, np.divide(filtered_df["percentMeth_Nanopore"], filtered_df["percentMeth_Nanopore"].mean()))
                 )
         
-        filtered_df = filtered_df.replace(-np.inf, np.nan).dropna()
+        if not include_zeros:
+            filtered_df = filtered_df.replace(-np.inf, np.nan).dropna()
 
         return filtered_df
     
@@ -48,7 +50,7 @@ class GroupedDF:
         """
         Adds "Average" and "Difference" to the dataframe, displaying the average level of enrichment and difference between method enrichment levels respectively.
         """
-        df = self.dfWithLogCols()
+        df = self.dfWithLogCols(False)
 
         df["Average"] = df[["Log2FromMean_TAB", "Log2FromMean_Nanopore"]].mean(axis=1)
         df["Difference"] = np.subtract(df["Log2FromMean_TAB"], df["Log2FromMean_Nanopore"])
@@ -56,13 +58,13 @@ class GroupedDF:
         return df
     
     def calcPearson(self):
-        df = self.dfWithLogCols()
+        df = self.dfWithLogCols(False)
 
         return stats.pearsonr(df["Log2FromMean_TAB"],
                               df["Log2FromMean_Nanopore"])
     
     def calcSpearman(self):
-        df = self.dfWithLogCols()
+        df = self.dfWithLogCols(False)
 
         return stats.spearmanr(df["Log2FromMean_TAB"],
                                df["Log2FromMean_Nanopore"])
@@ -72,14 +74,14 @@ class GroupedDF:
         Performs a Mann-Whitney(-Wilcoxon) U Test on the null hypothesis that the enrichment values from bisulphite (X) are from the same distribution as nanopore (Y). 
         Other values for the 'alternative' include 'greater' or 'less'. 
         """
-        df = self.dfWithLogCols()
+        df = self.dfWithLogCols(False)
 
         return stats.mannwhitneyu(df["Log2FromMean_TAB"],
                                   df["Log2FromMean_Nanopore"], 
                                   alternative=alternative)
     
     def makeHist(self, stat, ax=None, cax=None):
-        df = self.dfWithLogCols()
+        df = self.dfWithLogCols(False)
 
         if not ax:
             fig, ax = plt.subplots()
@@ -221,7 +223,7 @@ class tiledGroup(GroupedDF):
         return 
     
     def tileWithLogCols(self):
-        df = super().dfWithLogCols()
+        df = super().dfWithLogCols(False)
         return tiledGroup(df, self.cpg_threshold)
     
     def asCpGIntersect(self):
