@@ -13,36 +13,6 @@ class GroupedDF:
     """
     def __init__(self, df, cpg_threshold=None):
         self.df = df.loc[df.loc[:, "CpG_count"].ge(cpg_threshold)]
-      
-    def dfWithLogCols(self, include_zeros=False):
-        """
-        Adds columns indicating the log2scale enrichment/depletion of grouped CpG sites relative to the mean of each method. 
-
-        1 is added to the ratio of the group mean to the genomic mean to avoid ratios of 0 and resulting NaNs. 
-
-        TO BE DEPRECATED.
-        """
-        filtered_df = self.df.copy()
-        filtered_df = filtered_df.loc[filtered_df["CpG_count"].ge(self.cpg_threshold)] # filters out groups with fewer than 'cpg_threshold' CpGs present in either dataset. 
-
-        if not include_zeros:
-            add = 0
-        else: 
-            add = 1
-
-        with np.errstate(divide="ignore"):
-            filtered_df["Log2FromMean_TAB"] = np.log2(
-                np.add(add, np.divide(filtered_df["percentMeth_TAB"], filtered_df["percentMeth_TAB"].mean()))
-                )
-
-            filtered_df["Log2FromMean_Nanopore"] = np.log2(
-                np.add(add, np.divide(filtered_df["percentMeth_Nanopore"], filtered_df["percentMeth_Nanopore"].mean()))
-                )
-        
-        if not include_zeros:
-            filtered_df = filtered_df.replace(-np.inf, np.nan).dropna()
-
-        return filtered_df
     
     def __ratioToMean(self, column: str):
         new_col = self.df[column].divide(self.df[column].mean())
@@ -79,7 +49,7 @@ class GroupedDF:
         """
         Adds "Average" and "Difference" to the dataframe, displaying the average level of enrichment and difference between method enrichment levels respectively.
         """
-        df = self.dfWithLogCols(False)
+        df = self.enrichmentComparison()
 
         df["Average"] = df[["Log2FromMean_TAB", "Log2FromMean_Nanopore"]].mean(axis=1)
         df["Difference"] = np.subtract(df["Log2FromMean_TAB"], df["Log2FromMean_Nanopore"])
@@ -192,7 +162,7 @@ class tiledGroup(GroupedDF):
         return 
     
     def tileWithLogCols(self):
-        df = super().dfWithLogCols(False)
+        df = super().enrichmentComparison()
         return tiledGroup(df, self.cpg_threshold)
     
     def asCpGIntersect(self):
