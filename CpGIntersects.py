@@ -2,6 +2,7 @@ import subprocess
 import pandas as pd
 import pyranges as pr
 from FeatureReferences import *
+import numpy as np
 
 def geneRefPyRange():
     gene_ref_path = './feature_references/revised/GENCODE_Basic_mm39_Genes_merged.bed'
@@ -95,47 +96,19 @@ class CpGIntersects(pr.PyRanges):
         """
         Groups CpGs based according to Xkb windows ("tiles"), using the average (mean) hydroxymethlyation of CpGs within those windows. Output is distinct from the grouping function below as the chromosomal coordinates are actually what defines each cluster. 
         """
-        tiled_pr = self.tile(window_size, strand=False).cluster(slack=-1, strand=False)
-        cluster_pr = tiled_pr.merge(slack=-1, count=True, strand=False)
+        tiled_pr = self.tile(window_size, strand=False).cluster(slack=-1, strand=False)        
+        tiled_df = tiled_pr.as_df()
 
-        # requires columns: ["percentMeth_5hmC_Min" & "percentMeth_5hmC_Bisulphite"] | ["percentMeth_5mC_Min" & "percentMeth_5mC_Bisulphite"]
-        
-        if self.target_mod == "5hmC":
-            cluster_pr = cluster_pr.insert(
-                tiled_pr.apply(f=lambda df: df.groupby("Cluster")[["percentMeth_5hmC_Bisulphite", "percentMeth_5hmC_Min"]].mean(), as_pyranges=False, strand=False))
-        elif self.target_mod == "5mC":
-            cluster_pr = cluster_pr.insert(
-                tiled_pr.apply(f=lambda df: df.groupby("Cluster")[["percentMeth_5mC_Bisulphite", "percentMeth_5mC_Min"]].mean(), as_pyranges=False, strand=False))
-
-        if "percentMeth_5hmC_Bisulphite" and "percentMeth_5hmC_Min" in tiled_pr.as_df().columns:
-            cluster_pr = cluster_pr.insert(
-                tiled_pr.apply(
-                f=lambda df: df.groupby("Cluster")[["percentMeth_5hmC_Bisulphite", "percentMeth_5hmC_Min"]].mean(), 
-                as_pyranges=False, strand=False)
-                )
-        elif "percentMeth_5hmC_Bisulphite" and "percentMeth_5hmC_Prom" in tiled_pr.as_df().columns:
-            cluster_pr = cluster_pr.insert(
-                tiled_pr.apply(
-                f=lambda df: df.groupby("Cluster")[["percentMeth_5hmC_Bisulphite", "percentMeth_5hmC_Prom"]].mean(), 
-                as_pyranges=False, strand=False)
-                ) 
-            # the following header names are out of date as of this current version
-        elif "percentMeth_Bisulphite_5hmC" and "percentMeth_Nanopore_5hmC" in tiled_pr.as_df().columns:
-            cluster_pr = cluster_pr.insert(
-                tiled_pr.apply(
-                f=lambda df: df.groupby("Cluster")[["percentMeth_Bisulphite_5hmC", "percentMeth_Nanopore_5hmC"]].mean(), 
-                as_pyranges=False, strand=False)
-                )  
-        elif "percentMeth_TAB" and "percentMeth_Nanopore" in tiled_pr.as_df().columns:
-            cluster_pr = cluster_pr.insert(
-                tiled_pr.apply(
-                f=lambda df: df.groupby("Cluster")[["percentMeth_TAB", "percentMeth_Nanopore"]].mean(), 
-                as_pyranges=False, strand=False)
-                )
-        else: 
-            raise ValueError(f"Check column name consistency: {tiled_pr.as_df().columns}")
-        
-        return cluster_pr.as_df()
+        grouped_df = tiled_df.groupby(["Chromosome", "Start", "End"], observed=True).aggregate(
+            {
+                "percentMeth_5mC_Min" : np.mean,
+                "percentMeth_5mC_Bisulphite" : np.mean,
+                "percentMeth_5hmC_Min" : np.mean,
+                "percentMeth_5hmC_Bisulphite" : np.mean,
+                "Cluster" : "count"
+                }).reset_index()
+           
+        return grouped_df.rename(columns={"Cluster":"CpG_count"})
     
     def group(self, intersect_with):
         """
