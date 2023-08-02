@@ -37,9 +37,9 @@ class GroupedDF:
         """
         df = self.df.copy()
         df = df.assign(
-            log2enrichment_5mC_Min=self.__log2RatioWrapper("percentMeth_5mC_Min", include_zeros), 
+            log2enrichment_5mC_Min=self.__log2RatioWrapper("percentMeth_5mC_Nanopore", include_zeros), 
             log2enrichment_5mC_Bisulphite=self.__log2RatioWrapper("percentMeth_5mC_Bisulphite", include_zeros), 
-            log2enrichment_5hmC_Min=self.__log2RatioWrapper("percentMeth_5hmC_Min", include_zeros),            
+            log2enrichment_5hmC_Min=self.__log2RatioWrapper("percentMeth_5hmC_Nanopore", include_zeros),            
             log2enrichment_5hmC_Bisulphite=self.__log2RatioWrapper("percentMeth_5hmC_Bisulphite", include_zeros)
             )
         
@@ -49,7 +49,7 @@ class GroupedDF:
         """
         Adds "Average" and "Difference" to the dataframe, displaying the average level of enrichment and difference between method enrichment levels respectively.
         
-        TO BE DEPRECATED/REPAIRED
+        TO BE DEPRECATED/REPAIRED (colnames)
         """
         df = self.enrichmentComparison()
 
