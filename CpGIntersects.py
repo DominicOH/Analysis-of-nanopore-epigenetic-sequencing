@@ -46,10 +46,9 @@ class CpGIntersects(pr.PyRanges):
     """
     Main class for feature/gene level comparison. Inherits from PyRange. 
     """
-    def __init__(self, df, target_mod="5hmC"):
+    def __init__(self, df):
         super().__init__(df, df)
-        self.target_mod = target_mod
-
+        
     def intersectGenes(self):
         """
         Intersects CpGs with genes. Based on gene start/end coordinates in the GENCODE Basic reference build. 
@@ -94,19 +93,24 @@ class CpGIntersects(pr.PyRanges):
     
     def groupByGenomicWindow(self, window_size):
         """
-        Groups CpGs based according to Xkb windows ("tiles"), using the average (mean) hydroxymethlyation of CpGs within those windows. Output is distinct from the grouping function below as the chromosomal coordinates are actually what defines each cluster. 
+        Groups CpGs based according to `window_size` bp windows ("tiles"), using the average (mean) hydroxymethlyation of CpGs within those windows. Output is distinct from the grouping function below as the chromosomal coordinates are actually what defines each cluster. 
         """
-        tiled_pr = self.tile(window_size, strand=False).cluster(slack=-1, strand=False)        
-        tiled_df = tiled_pr.as_df()
+        tiled_pr = self.tile(window_size, strand=False).cluster(slack=-1, strand=False)
+        # give minion and prom datasets the same name for downstream compatibility
+        tiled_df = tiled_pr.as_df().rename(columns={
+            "percentMeth_5mC_Min" : "percentMeth_5mC_Nanopore", 
+            "percentMeth_5hmC_Min" : "percentMeth_5hmC_Nanopore", 
+            "percentMeth_5mC_Prom" : "percentMeth_5mC_Nanopore", 
+            "percentMeth_5hmC_Prom" : "percentMeth_5hmC_Nanopore"}, 
+            errors="ignore")
 
         grouped_df = tiled_df.groupby(["Chromosome", "Start", "End"], observed=True).aggregate(
-            {
-                "percentMeth_5mC_Min" : np.mean,
-                "percentMeth_5mC_Bisulphite" : np.mean,
-                "percentMeth_5hmC_Min" : np.mean,
-                "percentMeth_5hmC_Bisulphite" : np.mean,
-                "Cluster" : "count"
-                }).reset_index()
+            {"percentMeth_5mC_Nanopore" : np.mean,
+             "percentMeth_5mC_Bisulphite" : np.mean,
+             "percentMeth_5hmC_Nanopore" : np.mean,
+             "percentMeth_5hmC_Bisulphite" : np.mean,
+             "Cluster" : "count"}
+             ).reset_index()
            
         return grouped_df.rename(columns={"Cluster":"CpG_count"})
     
@@ -127,18 +131,24 @@ class CpGIntersects(pr.PyRanges):
         else: 
             raise ValueError("Please input appropriate element to intersect with: ['genes', 'features', 'repeats', or 'CGI']")
         
-        groupby_df = intersect_df.groupby(["Name", "feature_type", "Start_b", "End_b"], 
-                                          observed=True).agg(
-            {"percentMeth_Nanopore_5hmC" : "mean",
-             "percentMeth_TAB_5hmC" : "mean",
-             "Start" : "count"}
-             ).reset_index()
+        # give minion and prom datasets the same name for downstream compatibility
+        intersect_df = intersect_df.rename(columns={
+            "percentMeth_5mC_Min" : "percentMeth_5mC_Nanopore", 
+            "percentMeth_5hmC_Min" : "percentMeth_5hmC_Nanopore", 
+            "percentMeth_5mC_Prom" : "percentMeth_5mC_Nanopore", 
+            "percentMeth_5hmC_Prom" : "percentMeth_5hmC_Nanopore"}, 
+            errors="ignore")
         
-        groupby_df.rename(columns={"Start" : "CpG_count",
-                                   "Start_b" : "group_start",
-                                   "End_b" : "group_end",
-                                   "percentMeth_TAB_5hmC" : "percentMeth_TAB",
-                                   "percentMeth_Nanopore_5hmC" : "percentMeth_Nanopore"}, 
-                                   inplace=True)
+        # need to implement a count function
+        groupby_df = intersect_df.groupby(["Name", "feature_type", "Start_b", "End_b"], 
+                                          observed=True).agg({
+                                              "percentMeth_5mC_Nanopore" : np.mean,
+                                              "percentMeth_5mC_Bisulphite" : np.mean,
+                                              "percentMeth_5hmC_Nanopore" : np.mean,
+                                              "percentMeth_5hmC_Bisulphite" : np.mean,
+                                              "Start" : "count"}
+                                              ).reset_index()
 
-        return  groupby_df
+        return  groupby_df.rename(columns={"Start" : "CpG_count",
+                                           "Start_b" : "group_start",
+                                           "End_b" : "group_end"})
