@@ -11,7 +11,7 @@ def filterDepth(df, min_depth=10):
 def readBismarkZeroCov(
         path: str, 
         mod: str, 
-        min_depth: int = 10 | None):
+        min_depth: int = 10):
     """
     Reads the output file of Bismark methylation extractor. Requires the bed format output produced with the options: -p --bedGraph --zero_based --comprehensive
 
@@ -60,7 +60,7 @@ def get_nanopore_twoMod(path):
     return out_mod_df.dropna()
 
 def readModbam2bed(path: str,
-                   min_depth: int = 10 | None
+                   min_depth: int = 10
                    ):
     """
     Opens Modbam2bed bedMethyl files in an appropriate format for this analysis. 
