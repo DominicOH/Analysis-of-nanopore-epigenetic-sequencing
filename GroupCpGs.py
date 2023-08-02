@@ -56,28 +56,7 @@ class GroupedDF:
         df["Difference"] = np.subtract(df["Log2FromMean_TAB"], df["Log2FromMean_Nanopore"])
         
         return df
-    
-    def calcMannWhitney(self, alternative="two-sided"):
-        """
-        Performs a Mann-Whitney(-Wilcoxon) U Test on the null hypothesis that the enrichment values from bisulphite (X) are from the same distribution as nanopore (Y). 
-        Other values for the 'alternative' include 'greater' or 'less'. 
-        """
-        df = self.dfWithLogCols(False)
-
-        return stats.mannwhitneyu(df["Log2FromMean_TAB"],
-                                  df["Log2FromMean_Nanopore"], 
-                                  alternative=alternative)
-    
-    def makeHist(self, stat, ax=None, cax=None):
-        df = self.dfWithLogCols(False)
-
-        if not ax:
-            fig, ax = plt.subplots()
-
-        hist = sns.histplot(df, x="Log2FromMean_TAB", y="Log2FromMean_Nanopore", cbar=True, cbar_ax=cax, stat=stat, ax=ax)
-
-        return hist
-    
+        
 class FeatureAndGene(GroupedDF):
     """
     Dataframe-like objects where CpG sites are grouped by gene, genomic feature, or CpG island. 
@@ -100,33 +79,6 @@ class FeatureAndGene(GroupedDF):
         
         return pd.wide_to_long(cdf, stubs, indices, "method", sep="_", suffix="\D+").reset_index()
     
-    def makeLineplot(self, ax=None):
-        df = self.asLongDf()
-
-        if not ax:
-            fig, ax = plt.subplots()
-        
-        lineplot = sns.lineplot(df, x="feature_type", y="percentMeth", hue="method", errorbar=("pi", 50), estimator="median", ax=ax)
-        return lineplot
-    
-    def makeBarplot(self, ax=None):
-        df = self.asLongDf()
-
-        if not ax:
-            fig, ax = plt.subplots()
-        
-        barplot = sns.barplot(df, x="feature_type", y="percentMeth", hue="method", errorbar=("pi", 50),  estimator="median", capsize=0.1, errwidth=1, ax=ax)
-        return barplot
-
-    def makeBoxplots(self, ax=None):
-        df = self.asLongDf()
-
-        if not ax:
-            fig, ax = plt.subplots()
-        
-        boxplot = sns.boxplot(df, x="feature_type", y="percentMeth", hue="method", width=0.8, fliersize=0.005, ax=ax)
-        return boxplot
-
 class tiledGroup(GroupedDF):
     """
     Dataframe-like objects where CpG sites are grouped by genomic window or tile. 
