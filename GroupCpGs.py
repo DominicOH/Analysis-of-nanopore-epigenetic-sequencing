@@ -12,17 +12,15 @@ class GroupedDF:
     Dataframe-type objects where CpG positions are grouped. Child classes contain additional functionality. Contains interface for relevant Seaborn plotting functions.  
     """
     def __init__(self, df, cpg_threshold=None):
-        self.df = df
-        if "percentMeth_TAB_5hmC" in self.df.columns:
-            self.df.rename(columns={"percentMeth_TAB_5hmC" : "percentMeth_TAB"}, inplace=True)
-            
-        self.cpg_threshold = cpg_threshold
+        self.df = df.loc[df.loc[:, "CpG_count"].ge(cpg_threshold)]
       
     def dfWithLogCols(self, include_zeros=False):
         """
         Adds columns indicating the log2scale enrichment/depletion of grouped CpG sites relative to the mean of each method. 
 
         1 is added to the ratio of the group mean to the genomic mean to avoid ratios of 0 and resulting NaNs. 
+
+        TO BE DEPRECATED.
         """
         filtered_df = self.df.copy()
         filtered_df = filtered_df.loc[filtered_df["CpG_count"].ge(self.cpg_threshold)] # filters out groups with fewer than 'cpg_threshold' CpGs present in either dataset. 
@@ -46,6 +44,37 @@ class GroupedDF:
 
         return filtered_df
     
+    def __ratioToMean(self, column: str):
+        new_col = self.df[column].divide(self.df[column].mean())
+        return new_col
+    
+    def __log2RatioWrapper(self, column: str, include_zeros=False):
+        if include_zeros:
+            add = 1
+        else: 
+            add = 0
+        
+        with np.errstate(divide="ignore"):
+            log2_col = np.log2(
+                np.add(self.__ratioToMean(column), add))
+        return log2_col
+
+    def enrichmentComparison(self, include_zeros=False):
+        """
+        Provides additional columns with log_2 scale scores showing enrichment relative to the mean for 5mC and 5hmC. 
+
+        :param bool include_zeros: Whether groups with an average CpG modification of zero are kept. Adds 1 to the ratio calculation to avoid zero division. 
+        """
+        df = self.df.copy()
+        df = df.assign(
+            log2enrichment_5mC_Min=self.__log2RatioWrapper("percentMeth_5mC_Min", include_zeros), 
+            log2enrichment_5mC_Bisulphite=self.__log2RatioWrapper("percentMeth_5mC_Bisulphite", include_zeros), 
+            log2enrichment_5hmC_Min=self.__log2RatioWrapper("percentMeth_5hmC_Min", include_zeros),            
+            log2enrichment_5hmC_Bisulphite=self.__log2RatioWrapper("percentMeth_5hmC_Bisulphite", include_zeros)
+            )
+        
+        return df
+
     def methodComparison(self):
         """
         Adds "Average" and "Difference" to the dataframe, displaying the average level of enrichment and difference between method enrichment levels respectively.
