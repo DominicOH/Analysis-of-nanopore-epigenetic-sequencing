@@ -57,18 +57,6 @@ class GroupedDF:
         
         return df
     
-    def calcPearson(self):
-        df = self.dfWithLogCols(False)
-
-        return stats.pearsonr(df["Log2FromMean_TAB"],
-                              df["Log2FromMean_Nanopore"])
-    
-    def calcSpearman(self):
-        df = self.dfWithLogCols(False)
-
-        return stats.spearmanr(df["Log2FromMean_TAB"],
-                               df["Log2FromMean_Nanopore"])
-    
     def calcMannWhitney(self, alternative="two-sided"):
         """
         Performs a Mann-Whitney(-Wilcoxon) U Test on the null hypothesis that the enrichment values from bisulphite (X) are from the same distribution as nanopore (Y). 
@@ -159,7 +147,7 @@ class tiledGroup(GroupedDF):
         """
         Returns the negative control group - entries not enriched in either method.
         """
-        df = self.methodComparison()
+        df = super().methodComparison()
         df = df.nsmallest(50, "Average")
         df = df.nsmallest(number_target_tiles, "Difference")
         return tiledGroup(df, self.cpg_threshold)
@@ -168,7 +156,7 @@ class tiledGroup(GroupedDF):
         """
         Returns the Nanopore positive test group - entries enriched only in Nanopore.
         """
-        df = self.methodComparison()
+        df = super().methodComparison()
         df = df.loc[df["Log2FromMean_TAB"] <= 0]
         df = df.nlargest(number_target_tiles, "Log2FromMean_Nanopore")
         return tiledGroup(df, self.cpg_threshold)
@@ -177,7 +165,7 @@ class tiledGroup(GroupedDF):
         """
         Returns the TAB positive test group - entries enriched only in TAB.
         """
-        df = self.methodComparison()
+        df = super().methodComparison()
         df = df = df.loc[df["Log2FromMean_Nanopore"] <= 0]
         df = df.nlargest(number_target_tiles, "Log2FromMean_TAB")
         return tiledGroup(df, self.cpg_threshold)
