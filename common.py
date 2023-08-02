@@ -1,17 +1,17 @@
 import pandas as pd
 from math import sqrt
 
-def filterDepth(df):
+def filterDepth(df, min_depth=10):
     """
     Filters the dataframe to only rows within the minimum and maximum coverage depth. 
     """
     average = df["readCount"].mean()
-    return df.loc[(df.loc[:, "readCount"] > 9) & (df.loc[:, "readCount"] < (average + 3*sqrt(average)))]
+    return df.loc[(df.loc[:, "readCount"] >= min_depth) & (df.loc[:, "readCount"] < (average + 3*sqrt(average)))]
 
 def readBismarkZeroCov(
         path: str, 
         mod: str, 
-        filter: bool = False):
+        min_depth: int = 10 | None):
     """
     Reads the output file of Bismark methylation extractor. Requires the bed format output produced with the options: -p --bedGraph --zero_based --comprehensive
 
@@ -30,8 +30,8 @@ def readBismarkZeroCov(
             "chromosome", "chromStart", "chromEnd", "percentMeth_5hmC", "N_mod", "N_unmod"]
             ).assign(readCount = lambda row: row.N_mod + row.N_unmod)
         
-    if filter:
-        df = filterDepth(df)
+    if min_depth:
+        df = filterDepth(df, min_depth)
 
     return df.drop(columns=["N_mod", "N_unmod"])
 
@@ -59,7 +59,9 @@ def get_nanopore_twoMod(path):
 
     return out_mod_df.dropna()
 
-def readModbam2bed(path):
+def readModbam2bed(path: str,
+                   min_depth: int = 10 | None
+                   ):
     """
     Opens Modbam2bed bedMethyl files in an appropriate format for this analysis. 
     
@@ -72,7 +74,8 @@ def readModbam2bed(path):
     modbed.drop(columns="readCount", inplace=True)
     modbed.rename(columns={"readCount_T" : "readCount"}, inplace=True)
 
-    modbed = filterDepth(modbed)
+    if min_depth:
+        modbed = filterDepth(modbed, min_depth)
 
     modbed["percentMeth_C"] = modbed.loc[:, "N_C"].divide(modbed.loc[:, "readCount"]).multiply(100)
     modbed["percentMeth_5hmC"] = modbed.loc[:, "N_hmC"].divide(modbed.loc[:, "readCount"]).multiply(100)
