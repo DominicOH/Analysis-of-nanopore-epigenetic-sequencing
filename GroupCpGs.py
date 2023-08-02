@@ -48,6 +48,8 @@ class GroupedDF:
     def methodComparison(self):
         """
         Adds "Average" and "Difference" to the dataframe, displaying the average level of enrichment and difference between method enrichment levels respectively.
+        
+        TO BE DEPRECATED/REPAIRED
         """
         df = self.enrichmentComparison()
 
@@ -81,6 +83,8 @@ class FeatureAndGene(GroupedDF):
 class tiledGroup(GroupedDF):
     """
     Dataframe-like objects where CpG sites are grouped by genomic window or tile. 
+
+    TO BE DEPRECATED/REPAIRED.
     """
     def __init__(self, df, cpg_threshold):
         super().__init__(df, cpg_threshold)
