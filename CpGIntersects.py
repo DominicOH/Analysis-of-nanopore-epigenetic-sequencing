@@ -90,12 +90,21 @@ class CpGIntersects(pr.PyRanges):
 
         return  df_with_cgis
     
-    def groupByGenomicWindow(self, window_size):
+    def groupByGenomicWindow(self, window_size, target_mod="5hmC"):
         """
         Groups CpGs based according to Xkb windows ("tiles"), using the average (mean) hydroxymethlyation of CpGs within those windows. Output is distinct from the grouping function below as the chromosomal coordinates are actually what defines each cluster. 
         """
         tiled_pr = self.tile(window_size, strand=False).cluster(slack=-1, strand=False)
         cluster_pr = tiled_pr.merge(slack=-1, count=True, strand=False)
+
+        # requires columns: ["percentMeth_5hmC_Min" & "percentMeth_5hmC_Bisulphite"] | ["percentMeth_5mC_Min" & "percentMeth_5mC_Bisulphite"]
+        
+        if "percentMeth_5hmC_Bisulphite" and "percentMeth_5hmC_Min" in tiled_pr.as_df().columns:
+            cluster_pr = cluster_pr.insert(
+                tiled_pr.apply(
+                f=lambda df: df.groupby("Cluster")[["percentMeth_5hmC_Bisulphite", "percentMeth_5hmC_Min"]].mean(), 
+                as_pyranges=False, strand=False)
+                )
 
         if "percentMeth_5hmC_Bisulphite" and "percentMeth_5hmC_Min" in tiled_pr.as_df().columns:
             cluster_pr = cluster_pr.insert(
