@@ -7,13 +7,14 @@ def filterDepth(df,
     """
     Filters the dataframe to only rows within the minimum and maximum coverage depth. 
     """
-    average = df["readCount"].mean()
-    df = df.loc[df.loc[:, "readCount"] >= min_depth]
+    filtered_df = df.copy()
+    average = filtered_df["readCount"].mean()
+    filtered_df = filtered_df.loc[filtered_df.loc[:, "readCount"] >= min_depth]
 
     if apply_max_depth:
-        df = df.loc[df.loc[:, "readCount"] < (average + 3*sqrt(average))]
+        filtered_df = filtered_df.loc[filtered_df.loc[:, "readCount"] < (average + 3*sqrt(average))]
 
-    return 
+    return filtered_df
 
 def readBismarkZeroCov(
         path: str, 
