@@ -97,7 +97,20 @@ class CpGIntersects(pr.PyRanges):
         tiled_pr = self.tile(window_size, strand=False).cluster(slack=-1, strand=False)
         cluster_pr = tiled_pr.merge(slack=-1, count=True, strand=False)
 
-        if "percentMeth_Bisulphite_5hmC" and "percentMeth_Nanopore_5hmC" in tiled_pr.as_df().columns:
+        if "percentMeth_5hmC_Bisulphite" and "percentMeth_5hmC_Min" in tiled_pr.as_df().columns:
+            cluster_pr = cluster_pr.insert(
+                tiled_pr.apply(
+                f=lambda df: df.groupby("Cluster")[["percentMeth_5hmC_Bisulphite", "percentMeth_5hmC_Min"]].mean(), 
+                as_pyranges=False, strand=False)
+                )
+        elif "percentMeth_5hmC_Bisulphite" and "percentMeth_5hmC_Prom" in tiled_pr.as_df().columns:
+            cluster_pr = cluster_pr.insert(
+                tiled_pr.apply(
+                f=lambda df: df.groupby("Cluster")[["percentMeth_5hmC_Bisulphite", "percentMeth_5hmC_Prom"]].mean(), 
+                as_pyranges=False, strand=False)
+                ) 
+            # the following header names are out of date as of this current version
+        elif "percentMeth_Bisulphite_5hmC" and "percentMeth_Nanopore_5hmC" in tiled_pr.as_df().columns:
             cluster_pr = cluster_pr.insert(
                 tiled_pr.apply(
                 f=lambda df: df.groupby("Cluster")[["percentMeth_Bisulphite_5hmC", "percentMeth_Nanopore_5hmC"]].mean(), 
@@ -112,12 +125,7 @@ class CpGIntersects(pr.PyRanges):
         else: 
             raise ValueError(f"Check column name consistency: {tiled_pr.as_df().columns}")
         
-        cluster_df = cluster_pr.as_df().rename(columns={"Count" : "CpG_count",
-                                                        "percentMeth_Bisulphite_5hmC" : "percentMeth_TAB", 
-                                                        "percentMeth_Nanopore_5hmC" : "percentMeth_Nanopore"},
-                                                        errors="ignore")
-
-        return cluster_df
+        return cluster_pr.as_df()
     
     def group(self, intersect_with):
         """
@@ -151,11 +159,3 @@ class CpGIntersects(pr.PyRanges):
                                    inplace=True)
 
         return  groupby_df
-       
-    def calculateMethodMean(self):
-        df = self.as_df()
-
-        mean_dict = {"bisulphite_mean" : df["percentMeth_Bisulphite_5hmC"].mean(),
-                     "nanopore_mean" : df["percentMeth_Nanopore_5hmC"].mean()}
-
-        return mean_dict
