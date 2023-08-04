@@ -93,7 +93,12 @@ def readModbam2bed(path: str,
 
     return modbed.loc[:, ("chromosome", "chromStart", "chromEnd", "strand", "readCount", "percentMeth_C", "percentMeth_5mC", "percentMeth_5hmC")]
 
-def changeColNamesForPR(df):
+def changeColNamesForPR(df: pd.DataFrame):
+    """
+    Changes the column names of the df to be compatible for PyRanges.
+
+    :param pandas.DataFrame df: Input dataframe.
+    """
     assert "chromosome" and "chromStart" in df.columns
 
     out_df = df.copy()
