@@ -43,7 +43,7 @@ def CGIrefPyRange():
     cgi_reference_df = pd.concat(cgi_df_list)
     return pr.PyRanges(cgi_reference_df)
 
-class CpGIntersects(pr.PyRanges):
+class CpGRange(pr.PyRanges):
     """
     Initial class for feature/gene level comparison. Inherits from PyRanges. 
     """
@@ -150,12 +150,12 @@ class CpGIntersects(pr.PyRanges):
                                               "Start" : "count"}
                                               ).reset_index()
 
-        return  GroupedCpGs(groupby_df.rename(columns={
+        return  Multisite(groupby_df.rename(columns={
             "Start" : "CpG_count", 
             "Start_b" : "group_start", 
             "End_b" : "group_end"}))
     
-class GroupedCpGs:
+class Multisite:
     """
     Dataframe-type objects where CpG positions are grouped. Child classes contain additional functionality. Contains interface for relevant Seaborn plotting functions.  
     """
@@ -185,9 +185,9 @@ class GroupedCpGs:
         """
         df = self.df.copy()
         df = df.assign(
-            log2enrichment_5mC_Min=self.__log2RatioWrapper("percentMeth_5mC_Nanopore", include_zeros), 
+            log2enrichment_5mC_Nanopore=self.__log2RatioWrapper("percentMeth_5mC_Nanopore", include_zeros), 
             log2enrichment_5mC_Bisulphite=self.__log2RatioWrapper("percentMeth_5mC_Bisulphite", include_zeros), 
-            log2enrichment_5hmC_Min=self.__log2RatioWrapper("percentMeth_5hmC_Nanopore", include_zeros),            
+            log2enrichment_5hmC_Nanopore=self.__log2RatioWrapper("percentMeth_5hmC_Nanopore", include_zeros),            
             log2enrichment_5hmC_Bisulphite=self.__log2RatioWrapper("percentMeth_5hmC_Bisulphite", include_zeros)
             )
         
