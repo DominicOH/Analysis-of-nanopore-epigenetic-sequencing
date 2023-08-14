@@ -5,11 +5,6 @@ from FeatureReferences import Reference
 import numpy as np
 from typing import Literal
 
-def geneRefPyRange():
-    gene_ref_path = './feature_references/revised/GENCODE_Basic_mm39_Genes_merged.bed'
-    df = pd.read_csv(gene_ref_path, sep="\t", names=["Chromosome", "Start", "End", "Name", "Strand"])
-    return pr.PyRanges(df).unstrand()
-
 def featureRefPyRange(dir_path: str):
     """
     Takes a directory of BED4 or BED6 files containing lists of features and feature coordinates to be used for annotation purposes. 
@@ -52,15 +47,17 @@ class CpGRange(pr.PyRanges):
         return annotated_df
     
     def __annotate_with_single(self, feature_path):
-        annotation_ref = Reference(feature_path)
-        annotation_pr = pr.PyRanges(annotation_ref)
+        annotation_ref = Reference(feature_path).as_dataframe().drop(
+            columns=["Score", "ThickStart", "ThickEnd", "itemRgb", "blockCount", "blockSizes", "blockStarts"],
+            errors="ignore")
+        annotation_pr = pr.PyRanges(annotation_ref).unstrand()
         return self.join(annotation_pr, slack=0).as_df()
                  
     def group_by_tile(self, window_size):
         """
-        Groups CpGs based according to `window_size` bp windows ("tiles"), using the average (mean) hydroxymethlyation of CpGs within those windows. Output is distinct from the grouping function below as the chromosomal coordinates are actually what defines each cluster. 
+        Groups CpGs based according to `window_size` bp windows ("tiles"), using the average (mean) hydroxymethlyation of CpGs within those windows. Outputs a Pandas DataFrame. 
         """
-        tiled_pr = self.tile(window_size, strand=False).cluster(slack=-1, strand=False)
+        tiled_df = self.tile(window_size, strand=False).cluster(slack=-1, strand=False).as_df()
 
         grouped_df = tiled_df.groupby(["Chromosome", "Start", "End"], observed=True).aggregate(
             {"percentMeth_5mC_Nanopore" : np.mean,
@@ -72,18 +69,20 @@ class CpGRange(pr.PyRanges):
            
         return grouped_df.rename(columns={"Cluster":"CpG_count"})
     
-    def group_by(self, 
+    def group_by_annotation(self, 
               intersect_with: Literal["features", "CGI", "genes", "repeats"],
               annotation_path: str
               ):
         """
-        Groups CpGs based on intersects.
+        Groups CpGs based on intersecting annotations. Outputs a Pandas DataFrame.
         """
         intersecting_on = str(intersect_with).lower()
         if intersecting_on == "genes":
-            intersect_df = self.annotate_with_single(annotation_path)
+            intersect_df = self.__annotate_with_single(annotation_path)
         elif intersecting_on == "features" or intersecting_on == "cgi" or intersecting_on == "repeats":
-            intersect_df = self.annotate_with_multiple(annotation_path)
+            intersect_df = self.__annotate_with_multiple(annotation_path)
+        else: 
+            raise ValueError("Choose appropriate annotation type.")
 
         groupby_df = intersect_df.groupby(["Name", "feature_type", "Start_b", "End_b"], 
                                           observed=True).agg({
