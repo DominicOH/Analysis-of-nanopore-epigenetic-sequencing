@@ -3,12 +3,17 @@ import pandas as pd
 
 class Reference:
     """
-    Objects used as genomic or feature references. May be in the form of tab-separated variables (TSV) files.
+    Objects used as genomic or feature references extracted from files. Input files are preferably in BED4 or BED6 format.
     """
-    def __init__(self, path=None):
-        self.path = path
+    def __init__(self, 
+                 path: str=None):
+        self._path = path
+
+    @property
+    def path(self): # getter function for read-only path value
+        return self._path
     
-    def checkNumColumns(self):
+    def __check_number_of_columns(self):
         """
         Checks and returns the number of columns present in the TSV file.
         """
@@ -17,91 +22,31 @@ class Reference:
 
         return num_columns
     
-    def getColNames(self):
+    def __get_column_names(self):
         """
         Uses the number of columns to predict column name labels. 
         """
-        names = ["Chromosome", "Start", "End"]
+        num_columns = self.__check_number_of_columns()
+        names = ["Chromosome", "Start", "End", "Name"]
+
+        if num_columns == 6:
+            names.extend(["Score", "Strand"])
         return names
     
-    def getFirstLine(self):
-        first_line = subprocess.check_output(["head", "-n 1", f"{self.path}"]).decode("utf-8").split("\t")
-        return first_line
-
-class Features(Reference):
-    """
-    Regularly used object type containing information about genomic features. May be a tab-separated variables (TSV) file. Columns must contain follow BED 'Chromosome', 'Start', 'End', 'Name' format. 
-    """
-
-    def __init__(self, path):
-        super().__init__(path)
-        self.dataframe = pd.read_csv(self.path, sep="\t", names=self.getColNames())
-        self.dataframe["feature_type"] = self.retrieveFeatureType()
-   
-    def getColNames(self):
+    def __get_feature_type(self):
         """
-        Uses the number of columns to predict column name labels. 
-        """
-        col_length = super().checkNumColumns()
-        names =  super().getColNames()
-        
-        if col_length == 4:
-            names.extend(["Name"])
-        elif col_length == 5:
-            names.extend(["Name", "Strand"])
-        elif col_length == 6:
-            names.extend(["Name", "Score", "Strand"])
-        else:
-            raise ValueError("Please check number of columns in file. Must equal 4, 5, or 6.")
-        return names
-    
-    def retrieveFeatureType(self):
-        """
-        Uses the file extension to determine the type of feature. File must be saved in a './1_2_3_feature-type_4.bed' fashion. 
+        Uses the file extension to determine the type of feature. Feature type must be stored prior to the file extension within the file name. 
         """
         filename = self.path.split("/").pop(-1)
-        feature_type = filename.split("_").pop(3)
+        feature_type = filename.split("_").pop(-1)
 
         try:
             return feature_type.strip(".bed")
         except:
             return feature_type
         
-    def toDF(self):
-        return self.dataframe
-
-class CGIs(Reference):
-    """
-    Subclass of reference tab-separated variable file containing information about CpG island positions. file
-    """
-    def __init__(self, path):
-        self.path = path
-
-    def retrieveFeatureType(self):
-        first_line = super().getFirstLine()
-        
-        return first_line[-1].strip("\n")
-    
-    def getColNames(self):
-        """
-        Uses the number of columns to predict column name labels. 
-        """
-        col_length = super().checkNumColumns()
-        names =  super().getColNames()
-        first_line = super().getFirstLine()
-
-        if first_line[3].__contains__("CpG"):
-            names.extend(["NCpGs", "feature_type"])
-        else:
-            names.extend(["Name", "feature_type"])
-        
-        return names
-    
-    def toDF(self):
-        """
-        Shows the feature file as a pandas DataFrame.
-        """
-        df = pd.read_csv(self.path, sep="\t", names=self.getColNames())
-        
-        return df
-    
+    def as_dataframe(self):
+        names = self.__get_column_names()
+        dataframe = pd.read_csv(self.path, sep="\t", names=names)
+        dataframe["feature_type"] = self.__get_feature_type()
+        return dataframe
