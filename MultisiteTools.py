@@ -1,7 +1,7 @@
 import subprocess
 import pandas as pd
 import pyranges as pr
-from FeatureReferences import *
+from FeatureReferences import Reference
 import numpy as np
 from typing import Literal
 
@@ -10,18 +10,21 @@ def geneRefPyRange():
     df = pd.read_csv(gene_ref_path, sep="\t", names=["Chromosome", "Start", "End", "Name", "Strand"])
     return pr.PyRanges(df).unstrand()
 
-def featureRefPyRange():
-    gene_feature_list = subprocess.check_output(["ls", "./feature_references/revised/gene_features/name_adjusted/"]).decode("utf-8").split("\n") 
-    gene_feature_list.pop(-1)
+def featureRefPyRange(dir_path: str):
+    """
+    Takes a directory of BED4 or BED6 files containing lists of features and feature coordinates to be used for annotation purposes. 
+    """
+    gene_feature_list = subprocess.check_output(["ls", dir_path]).decode("utf-8").split("\n") 
+    gene_feature_list.pop(-1) # removes the current directory dot node 
 
     df_list = []
     for file in gene_feature_list:
-        path = "./feature_references/revised/gene_features/name_adjusted/" + file
-        feature_tsv = Features(path)
-        feature_df = feature_tsv.toDF()
+        path = dir_path + file
+        feature_tsv = Reference(path)
+        feature_df = feature_tsv.as_dataframe()
         df_list.append(feature_df)
 
-    feature_reference_df = pd.concat(df_list).drop(columns=["Score"])
+    feature_reference_df = pd.concat(df_list).drop(columns=["Score", "ThickStart", "ThickEnd"])
     return pr.PyRanges(feature_reference_df)
 
 def repeatTypeRefPyRange():
@@ -66,7 +69,7 @@ class CpGRange(pr.PyRanges):
         feature_ref = featureRefPyRange().unstrand()
         df_with_features = self.join(feature_ref, slack=0).as_df()
         categories = ["Intergenic", "Repeat", "Promoter", "5UTR", "TSS", "Intron", "Exon", "3UTR", "TTS"]
-        df_with_features["feature_type"] = pd.Categorical(df_with_features["feature_type"], categories)
+        # df_with_features["feature_type"] = pd.Categorical(df_with_features["feature_type"], categories)
 
         return  df_with_features
     
@@ -77,7 +80,7 @@ class CpGRange(pr.PyRanges):
         repeat_ref = repeatTypeRefPyRange().unstrand()
         df_labelled_repeats = self.join(repeat_ref, slack=0).as_df()
         categories = ["LINE", "SINE", "Simple_repeat", "LTR", "DNA", "Retroposon", "Low_complexity", "Satellite"]
-        df_labelled_repeats["feature_type"] = pd.Categorical(df_labelled_repeats["feature_type"], categories)
+        # df_labelled_repeats["feature_type"] = pd.Categorical(df_labelled_repeats["feature_type"], categories)
 
         return  df_labelled_repeats
     
@@ -88,7 +91,7 @@ class CpGRange(pr.PyRanges):
         cgi_ref = CGIrefPyRange().unstrand()
         df_with_cgis = self.join(cgi_ref, slack=0).as_df()
         categories = ["Open sea", "Upstream shelf", "Upstream shore", "CGI", "Downstream shore", "Downstream shelf"]
-        df_with_cgis["feature_type"] = pd.Categorical(df_with_cgis["feature_type"], categories)
+        # df_with_cgis["feature_type"] = pd.Categorical(df_with_cgis["feature_type"], categories)
 
         return  df_with_cgis
     

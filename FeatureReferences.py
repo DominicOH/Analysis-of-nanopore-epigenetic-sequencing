@@ -31,6 +31,8 @@ class Reference:
 
         if num_columns == 6:
             names.extend(["Score", "Strand"])
+        elif num_columns == 8:
+            names.extend(["Score", "Strand", "ThickStart", "ThickEnd"])
         return names
     
     def __get_feature_type(self):
