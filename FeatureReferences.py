@@ -42,12 +42,9 @@ class Reference:
         Uses the file extension to determine the type of feature. Feature type must be stored prior to the file extension within the file name. 
         """
         filename = self.path.split("/").pop(-1)
-        feature_type = filename.split("_").pop(-1)
-
-        try:
-            return feature_type.strip(".bed")
-        except:
-            return feature_type
+        feature_type = filename.split("_").pop(-1).split(".").pop(0)
+        
+        return feature_type
         
     def as_dataframe(self):
         names = self.__get_column_names()

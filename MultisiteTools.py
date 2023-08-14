@@ -43,7 +43,8 @@ class CpGRange(pr.PyRanges):
 
     def __annotate_with_multiple(self, annotation_dir_path):
         annotation_ref = featureRefPyRange(annotation_dir_path).unstrand()
-        annotated_df = self.join(annotation_ref, slack=0).as_df()
+        annotated_df = annotation_ref.join(self, False, "right", suffix="_CpG", apply_strand_suffix=False).as_df()
+
         return annotated_df
     
     def __annotate_with_single(self, feature_path):
@@ -51,7 +52,9 @@ class CpGRange(pr.PyRanges):
             columns=["Score", "ThickStart", "ThickEnd", "itemRgb", "blockCount", "blockSizes", "blockStarts"],
             errors="ignore")
         annotation_pr = pr.PyRanges(annotation_ref).unstrand()
-        return self.join(annotation_pr, slack=0).as_df()
+        annotated_df = annotation_pr.join(self, False, "right", suffix="_CpG", apply_strand_suffix=False).as_df()
+    
+        return annotated_df
                  
     def group_by_tile(self, window_size):
         """
@@ -70,33 +73,28 @@ class CpGRange(pr.PyRanges):
         return grouped_df.rename(columns={"Cluster":"CpG_count"})
     
     def group_by_annotation(self, 
-              intersect_with: Literal["features", "CGI", "genes", "repeats"],
+              intersect_with: str,
               annotation_path: str
               ):
         """
-        Groups CpGs based on intersecting annotations. Outputs a Pandas DataFrame.
+        Groups CpGs based on intersecting annotations (incl. "genes", "features", "CGI", or "repeats"). Outputs a Pandas DataFrame.
         """
         intersecting_on = str(intersect_with).lower()
         if intersecting_on == "genes":
             intersect_df = self.__annotate_with_single(annotation_path)
-        elif intersecting_on == "features" or intersecting_on == "cgi" or intersecting_on == "repeats":
+        elif intersecting_on in ["features", "cgi", "repeats"]:
             intersect_df = self.__annotate_with_multiple(annotation_path)
         else: 
             raise ValueError("Choose appropriate annotation type.")
 
-        groupby_df = intersect_df.groupby(["Name", "feature_type", "Start_b", "End_b"], 
-                                          observed=True).agg({
-                                              "percentMeth_5mC_Nanopore" : np.mean,
-                                              "percentMeth_5mC_Bisulphite" : np.mean,
-                                              "percentMeth_5hmC_Nanopore" : np.mean,
-                                              "percentMeth_5hmC_Bisulphite" : np.mean,
-                                              "Start" : "count"}
-                                              ).reset_index()
+        groupby_df = intersect_df.groupby(["Name", "feature_type"]).agg({
+            "percentMeth_5mC_Nanopore" : np.mean,
+            "percentMeth_5mC_Bisulphite" : np.mean,
+            "percentMeth_5hmC_Nanopore" : np.mean,
+            "percentMeth_5hmC_Bisulphite" : np.mean,
+            "Start_CpG" : "count"}).reset_index()
 
-        return  Multisite(groupby_df.rename(columns={
-            "Start" : "CpG_count", 
-            "Start_b" : "group_start", 
-            "End_b" : "group_end"}))
+        return  Multisite(groupby_df.rename(columns={"Start_CpG" : "CpG_count"}))
     
 class Multisite:
     """
