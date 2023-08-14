@@ -3,7 +3,7 @@ import pandas as pd
 
 class Reference:
     """
-    Objects used as genomic or feature references extracted from files. Input files are preferably in BED4 or BED6 format.
+    Objects used as genomic or feature references extracted from files. Input files should be in BED4, BED6, BED8, and BED12 format files are supported.
     """
     def __init__(self, 
                  path: str=None):
@@ -13,7 +13,7 @@ class Reference:
     def path(self): # getter function for read-only path value
         return self._path
     
-    def __check_number_of_columns(self):
+    def __check_num_columns(self):
         """
         Checks and returns the number of columns present in the TSV file.
         """
@@ -26,13 +26,15 @@ class Reference:
         """
         Uses the number of columns to predict column name labels. 
         """
-        num_columns = self.__check_number_of_columns()
+        num_columns = self.__check_num_columns()
         names = ["Chromosome", "Start", "End", "Name"]
 
         if num_columns == 6:
             names.extend(["Score", "Strand"])
         elif num_columns == 8:
             names.extend(["Score", "Strand", "ThickStart", "ThickEnd"])
+        elif num_columns == 12:
+            names.extend(["Score", "Strand", "ThickStart", "ThickEnd", "itemRgb", "blockCount", "blockSizes", "blockStarts"])
         return names
     
     def __get_feature_type(self):
