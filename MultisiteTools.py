@@ -32,81 +32,35 @@ def repeatTypeRefPyRange():
     df = pd.read_csv(repeat_ref_path, sep="\t", names=["Chromosome", "Start", "End", "feature_type", "Name"])
     return pr.PyRanges(df).unstrand()
 
-def CGIrefPyRange():
-    cgi_feature_list = subprocess.check_output(["ls", "./feature_references/revised/cgi/named/"]).decode("utf-8").split("\n") 
-    cgi_feature_list.pop(-1)
-
-    cgi_df_list = []
-    for file in cgi_feature_list:
-        path = "./feature_references/revised/cgi/named/" + file
-        cgi_tsv = CGIs(path)
-        cgi_df = cgi_tsv.toDF()
-        cgi_df_list.append(cgi_df)
-
-    cgi_reference_df = pd.concat(cgi_df_list)
-    return pr.PyRanges(cgi_reference_df)
-
 class CpGRange(pr.PyRanges):
     """
     Initial class for feature/gene level comparison. Inherits from PyRanges. 
     """
     def __init__(self, df):
-        super().__init__(df, df)
-        
-    def intersectGenes(self):
-        """
-        Intersects CpGs with genes. Based on gene start/end coordinates in the GENCODE Basic reference build. 
-        """
-        gene_ref_pr = geneRefPyRange()
-        df_with_genes = self.join(gene_ref_pr, slack=0).as_df()
-        df_with_genes["feature_type"] = "Gene"
-        return  df_with_genes
-    
-    def intersectFeatures(self):
-        """
-        Intersects CpGs with genomic features. Output is a dataframe-type object. 
-        """
-        feature_ref = featureRefPyRange().unstrand()
-        df_with_features = self.join(feature_ref, slack=0).as_df()
-        categories = ["Intergenic", "Repeat", "Promoter", "5UTR", "TSS", "Intron", "Exon", "3UTR", "TTS"]
-        # df_with_features["feature_type"] = pd.Categorical(df_with_features["feature_type"], categories)
-
-        return  df_with_features
-    
-    def intersectRepeatTypes(self):
-        """
-        Intersects CpGs with repetitive features in DNA. Output is a dataframe-type object. 
-        """
-        repeat_ref = repeatTypeRefPyRange().unstrand()
-        df_labelled_repeats = self.join(repeat_ref, slack=0).as_df()
-        categories = ["LINE", "SINE", "Simple_repeat", "LTR", "DNA", "Retroposon", "Low_complexity", "Satellite"]
-        # df_labelled_repeats["feature_type"] = pd.Categorical(df_labelled_repeats["feature_type"], categories)
-
-        return  df_labelled_repeats
-    
-    def intersectCpGIslands(self):
-        """
-        Intersects CpGs with CpG islands. Islands are broken into island feature (i.e.: shelf, shore). 
-        """
-        cgi_ref = CGIrefPyRange().unstrand()
-        df_with_cgis = self.join(cgi_ref, slack=0).as_df()
-        categories = ["Open sea", "Upstream shelf", "Upstream shore", "CGI", "Downstream shore", "Downstream shelf"]
-        # df_with_cgis["feature_type"] = pd.Categorical(df_with_cgis["feature_type"], categories)
-
-        return  df_with_cgis
-    
-    def groupByGenomicWindow(self, window_size):
-        """
-        Groups CpGs based according to `window_size` bp windows ("tiles"), using the average (mean) hydroxymethlyation of CpGs within those windows. Output is distinct from the grouping function below as the chromosomal coordinates are actually what defines each cluster. 
-        """
-        tiled_pr = self.tile(window_size, strand=False).cluster(slack=-1, strand=False)
         # give minion and prom datasets the same name for downstream compatibility
-        tiled_df = tiled_pr.as_df().rename(columns={
+        df = df.rename(columns={
             "percentMeth_5mC_Min" : "percentMeth_5mC_Nanopore", 
             "percentMeth_5hmC_Min" : "percentMeth_5hmC_Nanopore", 
             "percentMeth_5mC_Prom" : "percentMeth_5mC_Nanopore", 
             "percentMeth_5hmC_Prom" : "percentMeth_5hmC_Nanopore"}, 
             errors="ignore")
+        super().__init__(df, df)
+
+    def __annotate_with_multiple(self, annotation_dir_path):
+        annotation_ref = featureRefPyRange(annotation_dir_path).unstrand()
+        annotated_df = self.join(annotation_ref, slack=0).as_df()
+        return annotated_df
+    
+    def __annotate_with_single(self, feature_path):
+        annotation_ref = Reference(feature_path)
+        annotation_pr = pr.PyRanges(annotation_ref)
+        return self.join(annotation_pr, slack=0).as_df()
+                 
+    def group_by_tile(self, window_size):
+        """
+        Groups CpGs based according to `window_size` bp windows ("tiles"), using the average (mean) hydroxymethlyation of CpGs within those windows. Output is distinct from the grouping function below as the chromosomal coordinates are actually what defines each cluster. 
+        """
+        tiled_pr = self.tile(window_size, strand=False).cluster(slack=-1, strand=False)
 
         grouped_df = tiled_df.groupby(["Chromosome", "Start", "End"], observed=True).aggregate(
             {"percentMeth_5mC_Nanopore" : np.mean,
@@ -118,32 +72,19 @@ class CpGRange(pr.PyRanges):
            
         return grouped_df.rename(columns={"Cluster":"CpG_count"})
     
-    def group(self, 
-              intersect_with: Literal["features", "CGI", "genes", "repeats"]
+    def group_by(self, 
+              intersect_with: Literal["features", "CGI", "genes", "repeats"],
+              annotation_path: str
               ):
         """
         Groups CpGs based on intersects.
         """
-        if intersect_with == "other":
-            intersect_df = self.df
-        elif intersect_with == "features" or intersect_with == "Features":
-            intersect_df = self.intersectFeatures()
-        elif intersect_with == "CGI" or intersect_with == "islands":
-            intersect_df = self.intersectCpGIslands()
-        elif intersect_with == "genes" or intersect_with == "Genes":
-            intersect_df = self.intersectGenes()
-        elif intersect_with == "repeats" or intersect_with == "Repeats":
-            intersect_df = self.intersectRepeatTypes()
-        
-        # give minion and prom datasets the same name for downstream compatibility
-        intersect_df = intersect_df.rename(columns={
-            "percentMeth_5mC_Min" : "percentMeth_5mC_Nanopore", 
-            "percentMeth_5hmC_Min" : "percentMeth_5hmC_Nanopore", 
-            "percentMeth_5mC_Prom" : "percentMeth_5mC_Nanopore", 
-            "percentMeth_5hmC_Prom" : "percentMeth_5hmC_Nanopore"}, 
-            errors="ignore")
-        
-        # need to implement a count function
+        intersecting_on = str(intersect_with).lower()
+        if intersecting_on == "genes":
+            intersect_df = self.annotate_with_single(annotation_path)
+        elif intersecting_on == "features" or intersecting_on == "cgi" or intersecting_on == "repeats":
+            intersect_df = self.annotate_with_multiple(annotation_path)
+
         groupby_df = intersect_df.groupby(["Name", "feature_type", "Start_b", "End_b"], 
                                           observed=True).agg({
                                               "percentMeth_5mC_Nanopore" : np.mean,
