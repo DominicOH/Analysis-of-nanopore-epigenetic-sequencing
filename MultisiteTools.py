@@ -91,7 +91,10 @@ class CpGRange(pr.PyRanges):
               annotation_path: str
               ):
         """
-        Groups CpGs based on intersecting annotations (incl. "genes", "features", "CGI", or "repeats"). Outputs a Pandas DataFrame.
+        Groups CpGs based on intersecting annotations. Outputs a Pandas DataFrame.
+
+        :param str intersect_with: Type of object to be annotated by (available: "genes", "features", "CGI", or "repeats")
+        :param str annotation_path: Path to BED file or directory of BED files. BEDs must be in standard BED4, BED6, BED8, or BED12 format. 
         """
         intersecting_on = str(intersect_with).lower()
         if intersecting_on == "genes":
@@ -119,7 +122,7 @@ class CpGRange(pr.PyRanges):
     
 class Multisite:
     """
-    PyRange objects where CpG positions are grouped.
+    PyRange objects where CpG positions are grouped by feature, gene, or genomic window.
     """
     def __init__(self, df, cpg_threshold=1, raw_means=None):
         self._df = df.loc[df.loc[:, "CpG_count"].ge(cpg_threshold)]
@@ -134,6 +137,9 @@ class Multisite:
         return self._raw_means
     
     def __calculate_ratio_to_mean(self, column: str):
+        """
+        Calculates ratio difference between the grouped percentage modification and the ORIGINAL CPG MODIFICATION RATE.
+        """
         new_col = self.df[column].divide(self.raw_means[column])
         return new_col
     
