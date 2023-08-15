@@ -19,7 +19,7 @@ def featureRefPyRange(dir_path: str):
         feature_df = feature_tsv.as_dataframe()
         df_list.append(feature_df)
 
-    feature_reference_df = pd.concat(df_list).drop(columns=["Score", "ThickStart", "ThickEnd"])
+    feature_reference_df = pd.concat(df_list).drop(columns=["Score", "ThickStart", "ThickEnd"], errors="ignore")
     return pr.PyRanges(feature_reference_df)
 
 def repeatTypeRefPyRange():
@@ -81,20 +81,27 @@ class CpGRange(pr.PyRanges):
         """
         intersecting_on = str(intersect_with).lower()
         if intersecting_on == "genes":
-            intersect_df = self.__annotate_with_single(annotation_path)
+            intersect_df = self.__annotate_with_single(annotation_path).replace(-1, "Intergenic")
         elif intersecting_on in ["features", "cgi", "repeats"]:
             intersect_df = self.__annotate_with_multiple(annotation_path)
         else: 
             raise ValueError("Choose appropriate annotation type.")
 
-        groupby_df = intersect_df.groupby(["Name", "feature_type"]).agg({
+        groupby_df = intersect_df.groupby(["Name", "feature_type", "Start", "End"]).agg({
             "percentMeth_5mC_Nanopore" : np.mean,
             "percentMeth_5mC_Bisulphite" : np.mean,
             "percentMeth_5hmC_Nanopore" : np.mean,
             "percentMeth_5hmC_Bisulphite" : np.mean,
             "Start_CpG" : "count"}).reset_index()
+        
+        if intersecting_on in ["genes", "features"]: 
+            output_df = groupby_df.replace("-1", "Intergenic")
+        elif intersecting_on == "cgi":
+            output_df = groupby_df.replace("-1", "Open sea")
+        elif intersecting_on == "repeats":
+            output_df = groupby_df.replace("-1", None).dropna()
 
-        return  Multisite(groupby_df.rename(columns={"Start_CpG" : "CpG_count"}))
+        return  Multisite(output_df.rename(columns={"Start_CpG" : "CpG_count"}))
     
 class Multisite:
     """
