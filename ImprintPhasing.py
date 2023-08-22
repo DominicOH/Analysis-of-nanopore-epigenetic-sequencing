@@ -4,9 +4,10 @@ from scipy.cluster import hierarchy
 import seaborn as sns
 
 class ModBaseAssemblage:
-    def __init__(self, 
-                 df: pd.DataFrame
-                 ):
+    """
+    A pandas DataFrame object built to contain modified bases 
+    """
+    def __init__(self, df: pd.DataFrame):
         self.df = df
     
     def __pivot_mods(self):
@@ -25,7 +26,7 @@ class ModBaseAssemblage:
 
         return score_table
 
-    def read_matrix(self, min_reads_per_cpg, min_cpgs_per_read, gene_name=None):
+    def read_matrix(self, min_reads_per_cpg=None, min_cpgs_per_read=None, gene_name=None):
         df = self.aggregated_score_table().replace(["c", "m", "h"], [0, 1, 2])
 
         if gene_name: 
@@ -42,10 +43,20 @@ class DMR_Matrix:
         self._clusters = None
         self._linkage_matrix = None
 
-    def dropReads(self, df, min_reads_per_cpg, min_cpgs_per_read):
+    def dropReads(self, df, min_reads_per_cpg=None, min_cpgs_per_read=None):
         filtered_df = df.copy()
-        filtered_df = filtered_df.dropna(thresh=min_reads_per_cpg, axis="columns") # first, remove CpGs present in fewer than the minimum count of reads 
-        filtered_df = filtered_df.dropna(thresh=min_cpgs_per_read, axis="index") # last, remove reads containing fewer than the minimum count of CpG sites.
+
+        # first: remove CpGs present in fewer than the minimum count of reads
+        if not min_reads_per_cpg:
+            filtered_df = filtered_df.dropna(thresh=0.5*len(filtered_df.index), axis="columns")  
+        else: 
+            filtered_df = filtered_df.dropna(thresh=min_reads_per_cpg, axis="columns") 
+        
+        # next: remove reads containing fewer than the minimum count of CpG sites.
+        if not min_cpgs_per_read:
+            filtered_df = filtered_df.dropna(thresh=0.5*len(filtered_df.columns), axis="index")
+        else: 
+            filtered_df = filtered_df.dropna(thresh=min_cpgs_per_read, axis="index") 
 
         return filtered_df
     
@@ -91,7 +102,8 @@ class DMR_Matrix:
     
     def as_modDF(self, 
                  dmr_df: ModBaseAssemblage,
-                 merge_sites=False):
+                 merge_sites=False
+                 ):
         pivoted_dmr_df = dmr_df.aggregated_score_table().query("refPos >= 1")
         clusters = self.demo_phased_reads_as_df()
 
@@ -118,6 +130,5 @@ class DMR_Matrix:
             percentMeth_5hmC = lambda row: row["h"] / row["readCount"]
         )
 
-        
         count_of_modbases = count_of_modbases.loc[:, ("Chromosome", "Start", "End", "c", "m", "h", "percentMeth_C", "percentMeth_5mC", "percentMeth_5hmC", "readCount", "Cluster")]
         return count_of_modbases
