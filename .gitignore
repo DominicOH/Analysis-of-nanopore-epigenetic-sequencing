@@ -10,6 +10,11 @@
 *.cov
 *.gtf
 *.bw
+.vscode/*
+*.bam
+*.bedgraph
+data_tables/*
+*.json
 DNMTools_datasets/*
 feature_references/*
 test_data/*
