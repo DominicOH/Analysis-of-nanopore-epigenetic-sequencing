@@ -9,6 +9,7 @@ class ModBaseAssemblage:
     """
     def __init__(self, df: pd.DataFrame):
         self.df = df
+        self._score_table = None
     
     def __pivot_mods(self):
         df = self.df
@@ -25,38 +26,39 @@ class ModBaseAssemblage:
         score_table["refPos"] = score_table.apply(lambda row: row["refPos"] if row["strand"] == "+" else row["refPos"] - 1, axis=1)
 
         return score_table
+    
+    @property
+    def score_table(self):
+        if not self._score_table:
+            self._score_table = self.aggregated_score_table()
+        return self._score_table
 
-    def read_matrix(self, min_reads_per_cpg=None, min_cpgs_per_read=None, gene_name=None):
+    def read_matrix(self, gene_name=None, minimum_read_count_proportion=0.5, min_cpg_count_proportion=0.5):
         df = self.aggregated_score_table().replace(["c", "m", "h"], [0, 1, 2])
 
         if gene_name: 
             matrix = df.query(f"Name == '{gene_name}' & refPos > 0")
-        else: 
+        else:  # currently doesn't work
             matrix = df.query("refPos > 0")
 
         matrix = matrix.pivot(index="readID", columns=["refPos"], values="classification")
-        return DMR_Matrix(matrix, min_reads_per_cpg, min_cpgs_per_read)
+        return DMR_Matrix(matrix, self.score_table, minimum_read_count_proportion, min_cpg_count_proportion)
     
 class DMR_Matrix:
-    def __init__(self, df, min_reads_per_cpg=None, min_cpgs_per_read=None):
-        self.df = self.dropReads(df, min_reads_per_cpg, min_cpgs_per_read)
+    def __init__(self, df, score_table=None, minimum_read_count_proportion=0.5, min_cpg_count_proportion=0.5):
+        self.df = self.dropReads(df, minimum_read_count_proportion, min_cpg_count_proportion)
+        self.__original_score_table = score_table
         self._clusters = None
         self._linkage_matrix = None
 
-    def dropReads(self, df, min_reads_per_cpg=None, min_cpgs_per_read=None):
+    def dropReads(self, df, minimum_read_count_proportion=0.5, min_cpg_count_proportion=0.5):
         filtered_df = df.copy()
 
         # first: remove CpGs present in fewer than the minimum count of reads
-        if not min_reads_per_cpg:
-            filtered_df = filtered_df.dropna(thresh=0.5*len(filtered_df.index), axis="columns")  
-        else: 
-            filtered_df = filtered_df.dropna(thresh=min_reads_per_cpg, axis="columns") 
-        
-        # next: remove reads containing fewer than the minimum count of CpG sites.
-        if not min_cpgs_per_read:
-            filtered_df = filtered_df.dropna(thresh=0.5*len(filtered_df.columns), axis="index")
-        else: 
-            filtered_df = filtered_df.dropna(thresh=min_cpgs_per_read, axis="index") 
+        filtered_df = filtered_df.dropna(thresh=minimum_read_count_proportion*len(filtered_df.index), axis="columns") 
+    
+        # next: remove reads containing fewer than the minimum count of CpG sites
+        filtered_df = filtered_df.dropna(thresh=min_cpg_count_proportion*len(filtered_df.columns), axis="index") 
 
         return filtered_df
     
@@ -100,11 +102,10 @@ class DMR_Matrix:
             cluster_df.to_csv(f"./data_tables/DMR_analysis/{outname}_c{cluster}.txt", header=False, index=False, columns=["readID"])
         return 
     
-    def as_modDF(self, 
-                 dmr_df: ModBaseAssemblage,
+    def as_modDF(self,
                  merge_sites=False
                  ):
-        pivoted_dmr_df = dmr_df.aggregated_score_table().query("refPos >= 1")
+        pivoted_dmr_df = self.__original_score_table.query("refPos >= 1")
         clusters = self.demo_phased_reads_as_df()
 
         merged_with_clustered_reads = pivoted_dmr_df.merge(clusters, "inner", "readID").rename(columns={
