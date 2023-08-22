@@ -1,56 +1,7 @@
 import pandas as pd
-from modbampy import ModBam
 from scipy.spatial import distance
 from scipy.cluster import hierarchy
-import numpy as np
 import seaborn as sns
-import subprocess
-
-def CpGsFromModBam(path):
-    with ModBam(path) as bam:
-        all_regions = []
-        for region in dmr_regions.values():
-            for read in bam.reads(region["Chromosome"], region["Start"], region["End"]):
-                [all_regions.append([region["Name"], region["Chromosome"], region["Start"], region["End"], read.reference_start, read.reference_end, *pos_mod]) for pos_mod in read.mod_sites]
-
-    region_df = pd.DataFrame(all_regions).rename(columns={
-        0   : "Name",
-        1 : "Chromosome",
-        2 : "regionStart",
-        3 : "regionEnd",
-        4 : "readStart",
-        5 : "readEnd", 
-        6 : "readID",
-        7 : "refPos", 
-        8 : "qPos",                                                            
-        9 : "strand", 
-        10 : ".",
-        11 : "cBase",
-        12 : "modBase", 
-        13 : "modScore"}).drop(columns=[".", "cBase"])
-    return ModBaseAssemblage(region_df)
-    
-def selectCpGsFromModBam(path, chrom, start, end):
-    with ModBam(path) as bam:
-        read_list = []
-        for read in bam.reads(chrom, start, end):
-            [read_list.append([chrom, start, end, read.reference_start, read.reference_end, *pos_mod]) for pos_mod in read.mod_sites]
-
-    read_df = pd.DataFrame(read_list).rename(columns={
-        0 : "Chromosome",
-        1 : "regionStart",
-        2 : "regionEnd",
-        3 : "readStart",
-        4 : "readEnd", 
-        5 : "readID",
-        6 : "refPos", 
-        7 : "qPos",                                                            
-        8 : "strand", 
-        9 : ".",
-        10 : "cBase",
-        11 : "modBase", 
-        12 : "modScore"}).drop(columns=[".", "cBase"])
-    return ModBaseAssemblage(read_df)
 
 class ModBaseAssemblage:
     def __init__(self, 
@@ -84,19 +35,19 @@ class ModBaseAssemblage:
 
         matrix = matrix.pivot(index="readID", columns=["refPos"], values="classification")
         return DMR_Matrix(matrix, min_reads_per_cpg, min_cpgs_per_read)
-
-def dropReads(df, min_reads_per_cpg, min_cpgs_per_read):
-    filtered_df = df.copy()
-    filtered_df = filtered_df.dropna(thresh=min_reads_per_cpg, axis="columns") # first, remove CpGs present in fewer than the minimum count of reads 
-    filtered_df = filtered_df.dropna(thresh=min_cpgs_per_read, axis="index") # last, remove reads containing fewer than the minimum count of CpG sites.
-
-    return filtered_df
-
+    
 class DMR_Matrix:
     def __init__(self, df, min_reads_per_cpg=None, min_cpgs_per_read=None):
-        self.df = dropReads(df, min_reads_per_cpg, min_cpgs_per_read)
+        self.df = self.dropReads(df, min_reads_per_cpg, min_cpgs_per_read)
         self._clusters = None
         self._linkage_matrix = None
+
+    def dropReads(self, df, min_reads_per_cpg, min_cpgs_per_read):
+        filtered_df = df.copy()
+        filtered_df = filtered_df.dropna(thresh=min_reads_per_cpg, axis="columns") # first, remove CpGs present in fewer than the minimum count of reads 
+        filtered_df = filtered_df.dropna(thresh=min_cpgs_per_read, axis="index") # last, remove reads containing fewer than the minimum count of CpG sites.
+
+        return filtered_df
     
     @property
     def linkage_matrix(self):
