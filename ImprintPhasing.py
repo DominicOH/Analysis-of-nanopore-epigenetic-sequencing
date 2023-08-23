@@ -1,6 +1,7 @@
 import pandas as pd
 from scipy.spatial import distance
 from scipy.cluster import hierarchy
+import functools
 import seaborn as sns
 
 class ModBaseAssemblage:
@@ -29,7 +30,7 @@ class ModBaseAssemblage:
     
     @property
     def score_table(self):
-        if not self._score_table:
+        if self._score_table is None:
             self._score_table = self.aggregated_score_table()
         return self._score_table
 
@@ -43,15 +44,15 @@ class ModBaseAssemblage:
 
         matrix = matrix.pivot(index="readID", columns=["refPos"], values="classification")
         return DMR_Matrix(matrix, self.score_table, minimum_read_count_proportion, min_cpg_count_proportion)
-    
+
 class DMR_Matrix:
     def __init__(self, df, score_table=None, minimum_read_count_proportion=0.5, min_cpg_count_proportion=0.5):
-        self.df = self.dropReads(df, minimum_read_count_proportion, min_cpg_count_proportion)
+        self.df = self.drop_reads(df, minimum_read_count_proportion, min_cpg_count_proportion)
         self.__original_score_table = score_table
         self._clusters = None
         self._linkage_matrix = None
 
-    def dropReads(self, df, minimum_read_count_proportion=0.5, min_cpg_count_proportion=0.5):
+    def drop_reads(self, df, minimum_read_count_proportion=0.5, min_cpg_count_proportion=0.5):
         filtered_df = df.copy()
 
         # first: remove CpGs present in fewer than the minimum count of reads
@@ -64,7 +65,7 @@ class DMR_Matrix:
     
     @property
     def linkage_matrix(self):
-        if not self._linkage_matrix:
+        if self._linkage_matrix is None:
             p_distances = distance.pdist(self.df, "hamming")
             linkage = hierarchy.linkage(p_distances, "average")
             self._linkage_matrix = linkage
@@ -72,7 +73,7 @@ class DMR_Matrix:
 
     @property
     def clusters(self):
-        if not self._clusters:
+        if self._clusters is None:
             linkage = self.linkage_matrix
             clusters = hierarchy.fcluster(linkage, 2, "maxclust")
             self._clusters = clusters
@@ -102,34 +103,41 @@ class DMR_Matrix:
             cluster_df.to_csv(f"./data_tables/DMR_analysis/{outname}_c{cluster}.txt", header=False, index=False, columns=["readID"])
         return 
     
-    def as_modDF(self,
-                 merge_sites=False
-                 ):
-        pivoted_dmr_df = self.__original_score_table.query("refPos >= 1")
+    def as_modDF(self, merge_sites=False):
+        score_table = self.__original_score_table.query("refPos >= 1")
         clusters = self.demo_phased_reads_as_df()
 
-        merged_with_clustered_reads = pivoted_dmr_df.merge(clusters, "inner", "readID").rename(columns={
+        unmerged_read_table = score_table.merge(clusters, "inner", "readID").rename(columns={
             "refPos" : "Start"
-        }).assign(End = lambda row: row["Start"] + 1)        
-        
+        }).assign(End = lambda row: row["Start"] + 1) 
+
         if not merge_sites:
-            return merged_with_clustered_reads.loc[:, ("Chromosome", "Start", "End", "readID", "classification", "Cluster")]
-        
-        count_of_modbases = merged_with_clustered_reads.groupby([
-            "Start", "End", "Chromosome", "Cluster", "classification"
-            ]).size().reset_index().rename(
-                    columns={0 : "size"}).pivot(
-                            index=["Chromosome", "Start", "End", "Cluster"], 
-                            columns="classification", values="size").fillna(0).reset_index(col_level="Chromosome")
+            unmerged_read_output = unmerged_read_table.loc[:, ("Chromosome", "Start", "End", "readID", "classification", "Cluster")]
 
-        count_of_modbases = count_of_modbases.assign(
-            readCount = lambda row: row["c"] + row["h"] + row["m"])
-        
-        count_of_modbases = count_of_modbases.assign(
-            percentMeth_C = lambda row: row["c"] / row["readCount"],
-            percentMeth_5mC = lambda row: row["m"] / row["readCount"],
-            percentMeth_5hmC = lambda row: row["h"] / row["readCount"]
-        )
+            c1_meth = unmerged_read_output.groupby("Cluster")["classification"].value_counts()[(1, "m")]
+            c2_meth = unmerged_read_output.groupby("Cluster")["classification"].value_counts()[(2, "m")]
 
-        count_of_modbases = count_of_modbases.loc[:, ("Chromosome", "Start", "End", "c", "m", "h", "percentMeth_C", "percentMeth_5mC", "percentMeth_5hmC", "readCount", "Cluster")]
-        return count_of_modbases
+            if c1_meth > c2_meth:
+                output_df = unmerged_read_output.replace({"Cluster" : {1 : "Methylated", 2 : "Unmethylated"}})
+            else: 
+                output_df = unmerged_read_output.replace({"Cluster" : {2 : "Methylated", 1 : "Unmethylated"}})
+       
+            return output_df
+        else: 
+            grouped_read_table = unmerged_read_table.groupby([
+                "Start", "End", "Chromosome", "Cluster", "classification"
+                ]).size().reset_index().rename(
+                        columns={0 : "size"}).pivot(
+                                index=["Chromosome", "Start", "End", "Cluster"], 
+                                columns="classification", values="size").fillna(0).reset_index(col_level="Chromosome")
+
+            grouped_read_table = grouped_read_table.assign(
+                readCount = lambda row: row["c"] + row["h"] + row["m"])
+            
+            grouped_read_table = grouped_read_table.assign(
+                percentMeth_C = lambda row: row["c"] / row["readCount"],
+                percentMeth_5mC = lambda row: row["m"] / row["readCount"],
+                percentMeth_5hmC = lambda row: row["h"] / row["readCount"]
+            )
+            grouped_read_table = grouped_read_table.loc[:, ("Chromosome", "Start", "End", "c", "m", "h", "percentMeth_C", "percentMeth_5mC", "percentMeth_5hmC", "readCount", "Cluster")]
+            return grouped_read_table
