@@ -103,7 +103,7 @@ class DMR_Matrix:
             cluster_df.to_csv(f"./data_tables/DMR_analysis/{outname}_c{cluster}.txt", header=False, index=False, columns=["readID"])
         return 
     
-    def as_modDF(self, merge_sites=False):
+    def as_modDF(self, merge_sites=False, keep_borders=False):
         score_table = self.__original_score_table.query("refPos >= 1")
         clusters = self.demo_phased_reads_as_df()
 
@@ -112,8 +112,11 @@ class DMR_Matrix:
         }).assign(End = lambda row: row["Start"] + 1) 
 
         if not merge_sites:
-            unmerged_read_output = unmerged_read_table.loc[:, ("Chromosome", "Start", "End", "readID", "classification", "Cluster")]
+            unmerged_read_output = unmerged_read_table.loc[:, ("Chromosome", "Start", "End", "regionStart", "regionEnd", "readID", "classification", "Cluster")]
 
+            if not keep_borders:
+                unmerged_read_output = unmerged_read_output.query("Start >= regionStart & End <= regionEnd")
+            
             c1_meth = unmerged_read_output.groupby("Cluster")["classification"].value_counts()[(1, "m")]
             c2_meth = unmerged_read_output.groupby("Cluster")["classification"].value_counts()[(2, "m")]
 
