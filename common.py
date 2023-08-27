@@ -1,5 +1,6 @@
 import pandas as pd
 from math import sqrt
+import pyranges as pr
 
 def filterDepth(df, 
                 min_depth: int = 10, 
@@ -95,28 +96,42 @@ def readModbam2bed(path: str,
 
     return modbed.loc[:, ("chromosome", "chromStart", "chromEnd", "strand", "readCount", "percentMeth_C", "percentMeth_5mC", "percentMeth_5hmC")]
 
-def changeColNamesForPR(df: pd.DataFrame):
+def asPyRanges(df):
     """
-    Changes the column names of the df to be compatible for PyRanges.
-
-    :param pandas.DataFrame df: Input dataframe.
+    Decorator function to change pandas DataFrame colnames for PyRanges compatibility. 
     """
-    assert "chromosome" and "chromStart" in df.columns
+    print("Changing colnames to be PyRanges compatible...")
+    try:
+        df = df.rename(columns={
+            "chromosome" : "Chromosome",
+            "chromStart" : "Start",
+            "chromEnd" : "End"
+        }, errors="ignore")
+        print("Done")
+        return pr.PyRanges(df)
+    except:
+        return print("Failed")
 
-    out_df = df.copy()
-    out_df.rename(columns={
-        "chromosome" : "Chromosome", 
-        "chromStart" : "Start",
-        "percentMeth_TAB_5hmC" : "percentMeth_Bisulphite_5hmC"
-    }, inplace=True)
+def asPyRangesDecorator(func):
+    """
+    Decorator function to change pandas DataFrame colnames for PyRanges compatibility. Same as the above but in decorator form!
+    """
+    def wrapper(*args, **kwargs):
+        df = func(*args, **kwargs)
+        print("Changing colnames to be PyRanges compatible...")
+        try:
+            df = df.rename(columns={
+                "chromosome" : "Chromosome",
+                "chromStart" : "Start",
+                "chromEnd" : "End"
+            }, errors="ignore")
+            print("Done")
 
-    if not "chromEnd" in out_df.columns:
-        out_df["End"] = out_df["Start"].add(1)
-    else: out_df.rename(columns={
-        "chromEnd" : "End"
-    }, inplace=True)
-    
-    return out_df
+            return pr.PyRanges(df)
+        except:
+            print("Failed")
+    return wrapper
+
     
 def loadChromSize():
     path = "./feature_references/revised/mm39.chrom.sizes"
