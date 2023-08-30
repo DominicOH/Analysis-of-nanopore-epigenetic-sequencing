@@ -21,7 +21,8 @@ def readBismarkZeroCov(
         path: str, 
         mod: str, 
         min_depth: int = 10,
-        apply_max_depth: bool = False):
+        apply_max_depth: bool = False,
+        incl_raw_counts: bool = False):
     """
     Reads the output file of Bismark methylation extractor. Requires the bed format output produced with the options: -p --bedGraph --zero_based --comprehensive
 
@@ -45,7 +46,10 @@ def readBismarkZeroCov(
     if min_depth:
         df = filterDepth(df, min_depth, apply_max_depth)
 
-    return df.drop(columns=["N_mod", "N_unmod"])
+    if incl_raw_counts:
+        return df
+    else: 
+        return df.drop(columns=["N_mod", "N_unmod"])
 
 def get_nanopore_twoMod(path):
     """
@@ -73,8 +77,8 @@ def get_nanopore_twoMod(path):
 
 def readModbam2bed(path: str,
                    min_depth: int = 10, 
-                   apply_max_depth: bool = False
-                   ):
+                   apply_max_depth: bool = False,
+                   incl_raw_counts: bool = False):
     """
     Opens Modbam2bed bedMethyl files in an appropriate format for this analysis. 
     
@@ -94,7 +98,10 @@ def readModbam2bed(path: str,
     modbed["percentMeth_5hmC"] = modbed.loc[:, "N_hmC"].divide(modbed.loc[:, "readCount"]).multiply(100)
     modbed["percentMeth_5mC"] = modbed.loc[:, "N_mC"].divide(modbed.loc[:, "readCount"]).multiply(100)
 
-    return modbed.loc[:, ("chromosome", "chromStart", "chromEnd", "strand", "readCount", "percentMeth_C", "percentMeth_5mC", "percentMeth_5hmC")]
+    if incl_raw_counts:
+        return modbed.loc[:, ("chromosome", "chromStart", "chromEnd", "strand", "readCount", "N_C", "N_mC", "N_hmC", "percentMeth_C", "percentMeth_5mC", "percentMeth_5hmC")]
+    else: 
+        return modbed.loc[:, ("chromosome", "chromStart", "chromEnd", "strand", "readCount", "percentMeth_C", "percentMeth_5mC", "percentMeth_5hmC")]
 
 def asPyRanges(df):
     """
