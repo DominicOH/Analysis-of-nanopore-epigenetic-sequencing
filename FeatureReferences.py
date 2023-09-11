@@ -1,5 +1,6 @@
 import subprocess
 import pandas as pd
+import pyranges as pr
 
 class Reference:
     """
@@ -8,7 +9,8 @@ class Reference:
     def __init__(self, 
                  path: str=None):
         self._path = path
-        self.df = self.__as_dataframe()
+        self.pr = pr.read_bed(self._path)
+        self._df = None
 
     @property
     def path(self): # getter function for read-only path value
@@ -47,11 +49,41 @@ class Reference:
         
         return feature_type
     
-    def merge_overlaps(self):
-        ... 
+    def __merge_overlaps(self):
+        pr = self.pr
+        merged_pr = pr.merge()
+        return merged_pr 
         
-    def __as_dataframe(self):
-        names = self.__get_column_names()
-        dataframe = pd.read_csv(self.path, sep="\t", names=names)
-        dataframe["feature_type"] = self.__get_feature_type()
-        return dataframe
+    @property
+    def df(self):
+        if self._df == None:
+            pr = self.__merge_overlaps()
+            df = pr.as_df()
+            
+            # Currently not working with names
+            # names = self.__get_column_names()
+            # df.columns = names
+            
+            df["feature_type"] = self.__get_feature_type()
+            self._df = df
+            return df
+        else: 
+            return self._df
+        
+def featureRefPyRange(dir_path: str):
+    """
+    Takes a directory of BED4 or BED6 files containing lists of features and feature coordinates to be used for annotation purposes. 
+    """
+    gene_feature_list = subprocess.check_output(["ls", dir_path]).decode("utf-8").split("\n") 
+    gene_feature_list.pop(-1) # removes the current directory dot node 
+
+    df_list = []
+    for file in gene_feature_list:
+        path = dir_path + file
+        feature_tsv = Reference(path)
+        feature_df = feature_tsv.df
+        df_list.append(feature_df)
+
+    feature_reference_df = pd.concat(df_list).drop(columns=["Score", "ThickStart", "ThickEnd"], errors="ignore")
+    return pr.PyRanges(feature_reference_df)
+        

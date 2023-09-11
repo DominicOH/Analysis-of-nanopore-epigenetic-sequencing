@@ -1,9 +1,7 @@
-import subprocess
 import pandas as pd
 import pyranges as pr
-from FeatureReferences import Reference
+import FeatureReferences
 import numpy as np
-from typing import Literal
 import warnings
 from common import readBismarkZeroCov, readModbam2bed, asPyRangesDecorator
 
@@ -26,23 +24,6 @@ def makeCpGRange(nanopore_path, tab_path):
     })
     return CpGRange(merged_df)
 
-def featureRefPyRange(dir_path: str):
-    """
-    Takes a directory of BED4 or BED6 files containing lists of features and feature coordinates to be used for annotation purposes. 
-    """
-    gene_feature_list = subprocess.check_output(["ls", dir_path]).decode("utf-8").split("\n") 
-    gene_feature_list.pop(-1) # removes the current directory dot node 
-
-    df_list = []
-    for file in gene_feature_list:
-        path = dir_path + file
-        feature_tsv = Reference(path)
-        feature_df = feature_tsv.as_dataframe()
-        df_list.append(feature_df)
-
-    feature_reference_df = pd.concat(df_list).drop(columns=["Score", "ThickStart", "ThickEnd"], errors="ignore")
-    return pr.PyRanges(feature_reference_df)
-
 def repeatTypeRefPyRange():
     repeat_ref_path = "./feature_references/revised/repeats/UCSC_rmsk_mm39_Repeat_IDd.bed"
     df = pd.read_csv(repeat_ref_path, sep="\t", names=["Chromosome", "Start", "End", "feature_type", "Name"])
@@ -61,28 +42,28 @@ class CpGRange(pr.PyRanges):
             "percentMeth_5hmC_Prom" : "percentMeth_5hmC_Nanopore",
             "percentMeth_5hmC_Bisulphite" : "percentMeth_5hmC_TAB"}, 
             errors="ignore")
+        
         super().__init__(df, df)
-        self.raw_means = None
-
+    
     @property
-    def __raw_means(self):
+    def raw_means(self):
         """
-        This property is intended to be used for downstream applications - saving the mean modification % per CpG. 
+        This is intended to be used for downstream applications - saving the mean modification % per CpG. 
         """
         list_of_cols = ["percentMeth_5hmC_TAB", "percentMeth_5hmC_Nanopore"]
         raw_means = {}
+        df = self.df
         for col in list_of_cols:
             try:
                 raw_means.update({
-                    col : self.df[col].mean()
+                    col : df[col].mean()
                 })
             except: 
                 pass
-        self.raw_means = raw_means
         return raw_means
 
     def __annotate_with_multiple(self, annotation_dir_path):
-        annotation_ref = featureRefPyRange(annotation_dir_path).unstrand()
+        annotation_ref = FeatureReferences.featureRefPyRange(annotation_dir_path).unstrand()
         with warnings.catch_warnings():
             warnings.simplefilter(action="ignore", category=FutureWarning)
             annotated_df = annotation_ref.join(self, False, "right", suffix="_CpG", apply_strand_suffix=False).as_df()
@@ -90,7 +71,9 @@ class CpGRange(pr.PyRanges):
         return annotated_df
     
     def __annotate_with_single(self, feature_path):
-        annotation_ref = Reference(feature_path).as_dataframe().drop(
+        annotation_ref = FeatureReferences.Reference(feature_path).df
+        # drops redundant columns 
+        annotation_ref = annotation_ref.drop(
             columns=["Score", "ThickStart", "ThickEnd", "itemRgb", "blockCount", "blockSizes", "blockStarts"],
             errors="ignore")
         annotation_pr = pr.PyRanges(annotation_ref).unstrand()
@@ -110,7 +93,7 @@ class CpGRange(pr.PyRanges):
              "Cluster" : "count"}
              ).reset_index().rename(columns={"Cluster":"CpG_count"})
            
-        return Multisite(grouped_df, raw_means=self.__raw_means)
+        return Multisite(grouped_df, raw_means=self.raw_means)
     
     def group_by_annotation(self, 
               intersect_with: str,
@@ -130,7 +113,7 @@ class CpGRange(pr.PyRanges):
         else: 
             raise ValueError("Choose appropriate annotation type.")
 
-        groupby_df = intersect_df.groupby(["Name", "feature_type", "Start", "End"]).agg({
+        groupby_df = intersect_df.groupby(["feature_type", "Start", "End"]).agg({
             "percentMeth_5hmC_Nanopore" : np.mean,
             "percentMeth_5hmC_TAB" : np.mean,
             "Start_CpG" : "count"}).reset_index()
@@ -142,7 +125,7 @@ class CpGRange(pr.PyRanges):
         elif intersecting_on == "repeats":
             output_df = groupby_df.replace("-1", None).dropna()
 
-        return  Multisite(output_df.rename(columns={"Start_CpG" : "CpG_count"}), raw_means=self.__raw_means)
+        return  Multisite(output_df.rename(columns={"Start_CpG" : "CpG_count"}), raw_means=self.raw_means)
     
 class Multisite:
     """
