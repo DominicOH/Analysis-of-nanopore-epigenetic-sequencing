@@ -8,6 +8,7 @@ class Reference:
     def __init__(self, 
                  path: str=None):
         self._path = path
+        self.df = self.__as_dataframe()
 
     @property
     def path(self): # getter function for read-only path value
@@ -45,8 +46,11 @@ class Reference:
         feature_type = filename.split("_").pop(-1).split(".").pop(0)
         
         return feature_type
+    
+    def merge_overlaps(self):
+        ... 
         
-    def as_dataframe(self):
+    def __as_dataframe(self):
         names = self.__get_column_names()
         dataframe = pd.read_csv(self.path, sep="\t", names=names)
         dataframe["feature_type"] = self.__get_feature_type()
