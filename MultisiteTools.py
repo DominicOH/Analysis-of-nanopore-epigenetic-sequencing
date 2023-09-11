@@ -62,7 +62,7 @@ class CpGRange(pr.PyRanges):
             "percentMeth_5hmC_Bisulphite" : "percentMeth_5hmC_TAB"}, 
             errors="ignore")
         super().__init__(df, df)
-        self._raw_means = None
+        self.raw_means = None
 
     @property
     def __raw_means(self):
@@ -78,6 +78,7 @@ class CpGRange(pr.PyRanges):
                 })
             except: 
                 pass
+        self.raw_means = raw_means
         return raw_means
 
     def __annotate_with_multiple(self, annotation_dir_path):
