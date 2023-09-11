@@ -50,30 +50,22 @@ def readBismarkZeroCov(
         return df
     else: 
         return df.drop(columns=["N_mod", "N_unmod"])
-
-def get_nanopore_twoMod(path):
-    """
-    CURRENTLY NOT IN USE.
-    """
-    # Requires updates to Modbam2bed 0.9.1 -e 
-    # Requires rebasecalling two-modwise in Dorado 
-    names = ["chromosome", "chromStart", "chromEnd", "modification_type", "score", "strand", "thickStart", "thickEnd", "RGB", "readCount", "percentMeth", "N_unmod", "N_mod", "N_filtered"]
-    redundant_cols = ["score", "thickStart", "thickEnd", "RGB"]
-    nanopore_mod_df = pd.read_csv(path, sep="\t", index_col=False, names=names).drop(columns=redundant_cols)
-    nanopore_mod_df["trueReadCount"] = nanopore_mod_df["readCount"].sub(nanopore_mod_df["N_filtered"])
-
-    rename_dict = {
-    "otherMod_percentMeth" : "percentMeth",
-    "trueReadCount" : "readCount",
-    "otherMod_method" : "method",
-    "otherMod_type" : "modification_type"}
     
-    nanopore_mod_df["method"] = "Nanopore 2-state"
-    nanopore_mod_df["modification_type"] = "5mC"
-    out_mod_df = nanopore_mod_df[["chromosome", "chromStart", "chromEnd", "strand", "modification_type", "trueReadCount", "percentMeth", "method"]].rename(columns=rename_dict)
+def pieData(annotated_peak_data, 
+            min_depth: int = 0, 
+            max_depth: int = np.inf
+            ): 
+    """
+    Small function that outputs labels and values for a matplotlib pie chart. Requires input DataFrame to be grouped by peak. 
+    Optional min/max values filter out peaks of below minimum/above maximum depth. 
+    """
+    if min_depth > 0 or max_depth < np.inf:
+        annotated_peak_data = annotated_peak_data.query(f"total_peakDepth >= {min_depth} & total_peakDepth <= {max_depth}")
 
+    pie_labels = annotated_peak_data["feature_type"].value_counts().index
+    pie_values = annotated_peak_data["feature_type"].value_counts().values
 
-    return out_mod_df.dropna()
+    return pie_values, pie_labels     
 
 def readModbam2bed(path: str,
                    min_depth: int = 10, 
@@ -141,7 +133,7 @@ def asPyRangesDecorator(func):
 
     
 def loadChromSize():
-    path = "./feature_references/revised/mm39.chrom.sizes"
+    path = "./feature_references/mm39.chrom.sizes"
 
     df = pd.read_csv(path, sep="\t", names=["chromosome", "chromEnd"])
     df["chromStart"] = 0
