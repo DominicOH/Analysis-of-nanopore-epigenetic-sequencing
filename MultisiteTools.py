@@ -83,7 +83,9 @@ class CpGRange(pr.PyRanges):
                  
     def group_by_tile(self, window_size):
         """
-        Groups CpGs based according to `window_size` bp windows ("tiles"), using the average (mean) hydroxymethlyation of CpGs within those windows. Outputs a Pandas DataFrame. 
+        Groups CpGs based according to `window_size` bp windows ("tiles"), using the average (mean) hydroxymethlyation of CpGs within those windows. 
+        
+        :returns Multisite grouped_tiles:  
         """
         tiled_df = self.tile(window_size, strand=False).cluster(slack=-1, strand=False).as_df()
 
@@ -92,8 +94,10 @@ class CpGRange(pr.PyRanges):
              "percentMeth_5hmC_TAB" : np.mean,
              "Cluster" : "count"}
              ).reset_index().rename(columns={"Cluster":"CpG_count"})
+            
+        grouped_tiles = Multisite(grouped_df, raw_means=self.raw_means)
            
-        return Multisite(grouped_df, raw_means=self.raw_means)
+        return grouped_tiles
     
     def group_by_annotation(self, 
               intersect_with: str,
