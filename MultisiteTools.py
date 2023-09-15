@@ -13,14 +13,17 @@ def Modbam2Pr(path):
 def Bismark2Pr(path, mod):
     return readBismarkZeroCov(path, mod, 10, True)
 
-def makeCpGRange(nanopore_path, tab_path):
+def makeCpGRange(nanopore_path, bis_path, mod="5hmC"):
     nanopore_pr = Modbam2Pr(nanopore_path)
-    tab_pr = Bismark2Pr(tab_path, "5hmC")
+    bis_path = Bismark2Pr(bis_path, mod)
 
-    merged_df = nanopore_pr.join(tab_pr, False, suffix="_TAB").as_df()
+    if mod == "5hmC":
+        merged_df = nanopore_pr.join(bis_path, False, suffix="_TAB").as_df()
+    else: 
+        merged_df = nanopore_pr.join(bis_path, False, suffix="_oxBS").as_df()
 
     merged_df = merged_df.rename(columns={
-        "percentMeth_5hmC" : "percentMeth_5hmC_Nanopore"
+        f"percentMeth_{mod}" : f"percentMeth_{mod}_Nanopore"
     })
     return CpGRange(merged_df)
 
@@ -36,21 +39,32 @@ class CpGRange(pr.PyRanges):
     def __init__(self, df):
         # give minion and prom datasets the same name for downstream compatibility
         df = df.rename(columns={
-            "percentMeth_5mC_Min" : "percentMeth_5mC_Nanopore", 
-            "percentMeth_5hmC_Min" : "percentMeth_5hmC_Nanopore", 
-            "percentMeth_5mC_Prom" : "percentMeth_5mC_Nanopore", 
-            "percentMeth_5hmC_Prom" : "percentMeth_5hmC_Nanopore",
-            "percentMeth_5hmC_Bisulphite" : "percentMeth_5hmC_TAB"}, 
+            "percentMeth_5hmC_Bisulphite" : "percentMeth_5hmC_TAB",
+            "percentMeth_5mC_Bisulphite" : "percentMeth_5mC_oxBS"
+            }, 
             errors="ignore")
         
         super().__init__(df, df)
-    
+
+    @property
+    def __percent_cols(self):
+        # Note: would be good to handle dataframes that have both
+        df = self.df
+
+        defaults = ["percentMeth_5mC_Nanopore", "percentMeth_5mC_oxBS", "percentMeth_5hmC_Nanopore", "percentMeth_5hmC_TAB"]
+        cols_present = []
+
+        for col in defaults: 
+            if col in df.columns:
+                cols_present.append(col)
+        return cols_present
+        
     @property
     def raw_means(self):
         """
         This is intended to be used for downstream applications - saving the mean modification % per CpG. 
         """
-        list_of_cols = ["percentMeth_5hmC_TAB", "percentMeth_5hmC_Nanopore"]
+        list_of_cols = ["percentMeth_5hmC_TAB", "percentMeth_5hmC_Nanopore", "percentMeth_5mC_oxBS", "percentMeth_5mC_Nanopore"]
         raw_means = {}
         df = self.df
         for col in list_of_cols:
@@ -64,6 +78,7 @@ class CpGRange(pr.PyRanges):
 
     def __annotate_with_multiple(self, annotation_dir_path):
         annotation_ref = FeatureReferences.featureRefPyRange(annotation_dir_path).unstrand()
+
         with warnings.catch_warnings():
             warnings.simplefilter(action="ignore", category=FutureWarning)
             annotated_df = annotation_ref.join(self, False, "right", suffix="_CpG", apply_strand_suffix=False).as_df()
@@ -72,14 +87,42 @@ class CpGRange(pr.PyRanges):
     
     def __annotate_with_single(self, feature_path):
         annotation_ref = FeatureReferences.Reference(feature_path).df
+
         # drops redundant columns 
         annotation_ref = annotation_ref.drop(
             columns=["Score", "ThickStart", "ThickEnd", "itemRgb", "blockCount", "blockSizes", "blockStarts"],
             errors="ignore")
         annotation_pr = pr.PyRanges(annotation_ref).unstrand()
+
         annotated_df = annotation_pr.join(self, False, "right", suffix="_CpG", apply_strand_suffix=False).as_df()
     
         return annotated_df
+    
+    def __groupby_function(self, df_with_groups):
+
+        percent_cols = self.__percent_cols
+        print(f"Aggregating all of {percent_cols}")
+
+        if "feature_type" in df_with_groups.columns:
+            groups = ["feature_type", "Start", "End"]
+        else: 
+            groups = ["Chromosome", "Start", "End"]    
+
+        if len(percent_cols) == 2:
+            grouped_df = df_with_groups.groupby(groups, observed=True).aggregate(
+                {percent_cols[0] : np.mean,
+                percent_cols[1] : np.mean,
+                "Cluster" : "count"}
+                ).reset_index().rename(columns={"Cluster" : "CpG_count"})
+        elif len(percent_cols) == 4:
+            grouped_df = df_with_groups.groupby(groups, observed=True).aggregate(
+                {percent_cols[0] : np.mean,
+                percent_cols[1] : np.mean,
+                percent_cols[2] : np.mean,
+                percent_cols[3] : np.mean,
+                "Cluster" : "count"}
+                ).reset_index().rename(columns={"Cluster" : "CpG_count"})
+        return grouped_df
                  
     def group_by_tile(self, window_size):
         """
@@ -89,13 +132,9 @@ class CpGRange(pr.PyRanges):
         """
         tiled_df = self.tile(window_size, strand=False).cluster(slack=-1, strand=False).as_df()
 
-        grouped_df = tiled_df.groupby(["Chromosome", "Start", "End"], observed=True).aggregate(
-            {"percentMeth_5hmC_Nanopore" : np.mean,
-             "percentMeth_5hmC_TAB" : np.mean,
-             "Cluster" : "count"}
-             ).reset_index().rename(columns={"Cluster":"CpG_count"})
-            
-        grouped_tiles = Multisite(grouped_df, raw_means=self.raw_means)
+        grouped_df = self.__groupby_function(tiled_df)
+        
+        grouped_tiles = Multisite(grouped_df, raw_means=self.raw_means, percent_cols=self.__percent_cols)
            
         return grouped_tiles
     
@@ -117,19 +156,18 @@ class CpGRange(pr.PyRanges):
         else: 
             raise ValueError("Choose appropriate annotation type.")
 
-        groupby_df = intersect_df.groupby(["feature_type", "Start", "End"]).agg({
-            "percentMeth_5hmC_Nanopore" : np.mean,
-            "percentMeth_5hmC_TAB" : np.mean,
-            "Start_CpG" : "count"}).reset_index()
+        intersect_df = intersect_df.rename(columns={"Start_CpG" : "Cluster"})
+
+        grouped_df = self.__groupby_function(intersect_df)
         
         if intersecting_on in ["genes", "features"]: 
-            output_df = groupby_df.replace("-1", "Intergenic")
+            output_df = grouped_df.replace("-1", "Intergenic")
         elif intersecting_on == "cgi":
-            output_df = groupby_df.replace("-1", "Open sea")
+            output_df = grouped_df.replace("-1", "Open sea")
         elif intersecting_on == "repeats":
-            output_df = groupby_df.replace("-1", None).dropna()
+            output_df = grouped_df.replace("-1", None).dropna()
 
-        return  Multisite(output_df.rename(columns={"Start_CpG" : "CpG_count"}), raw_means=self.raw_means)
+        return  Multisite(output_df.rename(columns={"Cluster" : "CpG_count"}), raw_means=self.raw_means, percent_cols=self.__percent_cols)
     
 class Multisite:
     """
@@ -137,9 +175,10 @@ class Multisite:
 
     Note: Not currently built to accommodate CpG 5mC.
     """
-    def __init__(self, df, cpg_threshold=1, raw_means=None):
+    def __init__(self, df, cpg_threshold=1, raw_means=None, percent_cols=None):
         self._df = df.loc[df.loc[:, "CpG_count"].ge(cpg_threshold)]
         self._raw_means = raw_means
+        self.__percent_cols = percent_cols
 
     @property
     def df(self):
@@ -174,9 +213,16 @@ class Multisite:
         :param bool include_zeros: Whether groups with an average CpG modification of zero are kept. Adds 1 to the ratio calculation to avoid zero division. 
         """
         df = self.df.copy()
-        df = df.assign(
-            log2enrichment_5hmC_Nanopore=self.__calculate_log2_difference("percentMeth_5hmC_Nanopore", include_zeros),            
-            log2enrichment_5hmC_TAB=self.__calculate_log2_difference("percentMeth_5hmC_TAB", include_zeros)
-            )
+
+        percent_cols = self.__percent_cols
+        new_cols = []
+
+        for col in percent_cols:
+            new_col_name = col.replace("percentMeth", "log2enrichment")
+            new_col = self.__calculate_log2_difference(col, include_zeros)
+            new_cols.append(pd.Series(new_col, name=new_col_name))
+
+        for col in new_cols:
+            df = df.assign(**{col.name : col.values})
         
         return Multisite(df, raw_means=self.raw_means)
