@@ -80,11 +80,24 @@ class DMR_Matrix:
         return self._clusters
 
     def demo_clustermap(self):
-        cm = sns.clustermap(self.df.fillna(-1), 
-                            mask=self.df.isnull(), 
-                            row_linkage=self.linkage_matrix,
-                            col_cluster=False, cmap=sns.color_palette("Blues", 3), 
-                            method="average", metric="hamming")
+        df = self.df
+        cm = sns.clustermap(df.fillna(-1), 
+                            mask=df.isnull(), 
+                            row_linkage=self.linkage_matrix, col_cluster=False, 
+                            method="average", metric="hamming",
+                            xticklabels="auto", yticklabels=False,
+                            cmap=sns.color_palette("Blues", 3),
+                            cbar_kws={"location" : "top",
+                                      "orientation" : "horizontal",
+                                      "ticks" : [0, 1, 2]})
+        
+        cm.ax_cbar.set_position([0.40, 0.85, 0.3, 0.03])
+        cm.ax_cbar.set_xticks([0.33, 1, 1.66])
+        cm.ax_cbar.set_xticklabels(["C", "5mC", "5hmC"])
+        cm.ax_cbar.set_title("Modification type", fontdict={"fontsize" : 10})
+        cm.ax_heatmap.set_ylabel("Read")
+        cm.ax_heatmap.set_xlabel("CpG position")
+
         return cm
 
     def demo_phased_reads_as_df(self):

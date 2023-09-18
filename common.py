@@ -1,6 +1,7 @@
 import pandas as pd
 from math import sqrt
 import pyranges as pr
+import numpy as np
 
 def filterDepth(df, 
                 min_depth: int = 10, 
@@ -56,8 +57,12 @@ def pieData(annotated_peak_data,
             max_depth: int = np.inf
             ): 
     """
-    Small function that outputs labels and values for a matplotlib pie chart. Requires input DataFrame to be grouped by peak. 
+    Small function that outputs labels and values for a matplotlib pie chart. Requires the feature_type column. 
     Optional min/max values filter out peaks of below minimum/above maximum depth. 
+
+    :returns:
+        - pie_values - Values for the pie chart. 
+        - pie_labels - Labels for each value in the pie chart. 
     """
     if min_depth > 0 or max_depth < np.inf:
         annotated_peak_data = annotated_peak_data.query(f"total_peakDepth >= {min_depth} & total_peakDepth <= {max_depth}")
@@ -131,7 +136,6 @@ def asPyRangesDecorator(func):
             print("Failed")
     return wrapper
 
-    
 def loadChromSize():
     path = "./feature_references/mm39.chrom.sizes"
 

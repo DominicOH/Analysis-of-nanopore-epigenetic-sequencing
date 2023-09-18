@@ -32,6 +32,13 @@ def repeatTypeRefPyRange():
     df = pd.read_csv(repeat_ref_path, sep="\t", names=["Chromosome", "Start", "End", "feature_type", "Name"])
     return pr.PyRanges(df).unstrand()
 
+def annotationPivot(df):
+    pivoted_df = pd.wide_to_long(df, 
+        stubnames=["percentMeth_5mC", "log2enrichment_5mC", "percentMeth_5hmC", "log2enrichment_5hmC"], 
+        i=["feature_type", "Chromosome", "Start", "End"], 
+        j="method", sep="_", suffix="\D+")
+    return pivoted_df.reset_index()
+
 class CpGRange(pr.PyRanges):
     """
     Initial class for feature/gene level comparison. Inherits from PyRanges. 
@@ -104,7 +111,7 @@ class CpGRange(pr.PyRanges):
         print(f"Aggregating all of {percent_cols}")
 
         if "feature_type" in df_with_groups.columns:
-            groups = ["feature_type", "Start", "End"]
+            groups = ["feature_type", "Chromosome", "Start", "End"]
         else: 
             groups = ["Chromosome", "Start", "End"]    
 
