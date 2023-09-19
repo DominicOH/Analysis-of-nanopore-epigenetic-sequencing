@@ -3,15 +3,7 @@ import pyranges as pr
 import FeatureReferences
 import numpy as np
 import warnings
-from common import readBismarkZeroCov, readModbam2bed, asPyRangesDecorator
-
-@asPyRangesDecorator
-def Modbam2Pr(path):
-    return readModbam2bed(path, 10, True)
-
-@asPyRangesDecorator
-def Bismark2Pr(path, mod):
-    return readBismarkZeroCov(path, mod, 10, True)
+from common import *
 
 def makeCpGRange(nanopore_path, bis_path, mod="5hmC"):
     nanopore_pr = Modbam2Pr(nanopore_path)
