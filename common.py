@@ -136,6 +136,14 @@ def asPyRangesDecorator(func):
             print("Failed")
     return wrapper
 
+@asPyRangesDecorator
+def Modbam2Pr(path, min_depth, max_depth, keep_raw):
+    return readModbam2bed(path, min_depth, max_depth, keep_raw)
+
+@asPyRangesDecorator
+def Bismark2Pr(path, mod, min_depth, max_depth, keep_raw):
+    return readBismarkZeroCov(path, mod, min_depth, max_depth, keep_raw)
+
 def loadChromSize():
     path = "./feature_references/mm39.chrom.sizes"
 
