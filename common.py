@@ -86,15 +86,15 @@ def readBismarkZeroCov(
 
     """
     if mod == "5mC":
-        df = pd.read_csv(path, sep="\t", names=[
-            "chromosome", "chromStart", "chromEnd", "percentMeth_5mC", "N_mod", "N_unmod"]
-            ).assign(readCount = lambda row: row.N_mod + row.N_unmod)
+        meth_col = "percentMeth_5mC"
     elif mod == "5hmC":
-        df = pd.read_csv(path, sep="\t", names=[
-            "chromosome", "chromStart", "chromEnd", "percentMeth_5hmC", "N_mod", "N_unmod"]
-            ).assign(readCount = lambda row: row.N_mod + row.N_unmod)
+        meth_col = "percentMeth_5hmC"
     else:
         raise ValueError("Please enter a mod type: '5mC' or '5hmC'")
+
+    df = pd.read_csv(path, sep="\t", names=[
+            "Chromosome", "Start", "End", meth_col, "N_mod", "N_unmod"]
+            ).assign(readCount = lambda row: row.N_mod + row.N_unmod)
         
     if min_depth:
         df = filterDepth(df, min_depth, apply_max_depth)
