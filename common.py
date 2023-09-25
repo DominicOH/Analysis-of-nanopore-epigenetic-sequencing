@@ -199,10 +199,10 @@ def Bismark2Pr(path, mod, min_depth=10, max_depth=False, keep_raw=False):
 def loadChromSize():
     path = "./feature_references/mm39.chrom.sizes"
 
-    df = pd.read_csv(path, sep="\t", names=["chromosome", "chromEnd"])
-    df["chromStart"] = 0
+    df = pd.read_csv(path, sep="\t", names=["Chromosome", "End"])
+    df["Start"] = 0
 
-    return df[["chromosome", "chromStart", "chromEnd"]]
+    return df[["Chromosome", "Start", "End"]]
 
 def optimisedResample(merged_df, left, right):
     """
