@@ -18,6 +18,58 @@ def filterDepth(df,
 
     return filtered_df
 
+def readModkit(
+        path: str, 
+        min_depth: int = 10,
+        apply_max_depth: bool = True,
+        incl_raw_counts: bool = False
+):
+    """
+    Reads the bedmMethyl output of Modkit pileup into a pd.DataFrame. 
+    NOTE: It's important that modkit pileup is run with the --only-tabs flag. Otherwise important data columns are separated only by spaces and missed by tab-parsing. 
+
+    :param str path: Filepath of the bedMethyl file. 
+    :param int min_depth: The minimum readcount of CpG sites.
+    :param bool apply_max_depth: Whether to filter out modbases with a depth greater than d + 3*sqrt(d); where d is the mean depth.
+    :param bool incl_raw_counts: Whether the raw count of modified basecalls should be kept in the resulting dataframe.
+
+    """
+    colnames = ["Chromosome", "Start", "End", "modBase", "modScore", "Strand", "rem1", "rem2", "rem3", "readCount", "percentMeth", "N_mod", "N_canonical", "N_other", "N_delete", "N_fail", "N_diff", "N_nocall"]
+    df_init = pd.read_csv(path, 
+                          sep="\t", 
+                          names=colnames)
+    
+    df_filtered = filterDepth(df_init, min_depth, apply_max_depth)
+
+    if incl_raw_counts:
+        pivot_cols =  ["readCount", "percentMeth", "N_mod", "N_canonical", "N_other"]
+    else:
+        pivot_cols = ["readCount", "percentMeth"]
+
+    df_pivot = df_filtered.pivot(index=["Chromosome", "Start", "End", "Strand"], columns="modBase", values=pivot_cols)
+    df_pivot.columns = df_pivot.columns.to_flat_index()
+    df_pivot = df_pivot.reset_index()
+    
+    df_pivot = df_pivot.rename(columns={
+        ('readCount', 'h') : "readCount",
+        "h" : "percentMeth_5hmC",
+        "m" : "percentMeth_5mC",
+        ("percentMeth", "h") : "percentMeth_5hmC",
+        ("percentMeth", "m") : "percentMeth_5mC",
+        ("N_mod", "h") : "N_hmC",
+        ("N_mod", "m") : "N_mC",
+        ("N_canonical", "h") : "N_C"
+    }, errors="ignore")
+
+    df_pivot = df_pivot.drop(columns=[
+        ("readCount", "m"),
+        ("N_canonical", "m"),
+        ("N_other", "h"),
+        ("N_other", "m")
+    ], errors="ignore")
+
+    return df_pivot 
+
 def readBismarkZeroCov(
         path: str, 
         mod: str, 
@@ -82,7 +134,7 @@ def readModbam2bed(path: str,
     Note: Requires modbam2bed extended output with options: -e --cpg -m 5mC (other mod is assumed to be 5hmC)
     """
     modbed = pd.read_csv(path, sep="\t", 
-                names=["chromosome", "chromStart", "chromEnd", "mod_type", "score", "strand", "i1", "i2", "i3", "readCount", "percentMeth_mC", "N_C", "N_mC", "N_filt", "N_NA", "N_hmC"])
+                names=["Chromosome", "Start", "End", "mod_type", "score", "Strand", "i1", "i2", "i3", "readCount", "percentMeth_mC", "N_C", "N_mC", "N_filt", "N_NA", "N_hmC"])
     modbed["readCount_T"] = modbed.loc[:, ("N_C", "N_mC", "N_hmC")].sum(axis="columns")
 
     modbed.drop(columns="readCount", inplace=True)
@@ -96,9 +148,9 @@ def readModbam2bed(path: str,
     modbed["percentMeth_5mC"] = modbed.loc[:, "N_mC"].divide(modbed.loc[:, "readCount"]).multiply(100)
 
     if incl_raw_counts:
-        return modbed.loc[:, ("chromosome", "chromStart", "chromEnd", "strand", "readCount", "N_C", "N_mC", "N_hmC", "percentMeth_C", "percentMeth_5mC", "percentMeth_5hmC")]
+        return modbed.loc[:, ("Chromosome", "Start", "End", "Strand", "readCount", "N_C", "N_mC", "N_hmC", "percentMeth_C", "percentMeth_5mC", "percentMeth_5hmC")]
     else: 
-        return modbed.loc[:, ("chromosome", "chromStart", "chromEnd", "strand", "readCount", "percentMeth_C", "percentMeth_5mC", "percentMeth_5hmC")]
+        return modbed.loc[:, ("Chromosome", "Start", "End", "Strand", "readCount", "percentMeth_C", "percentMeth_5mC", "percentMeth_5hmC")]
 
 def asPyRanges(df):
     """
@@ -137,11 +189,11 @@ def asPyRangesDecorator(func):
     return wrapper
 
 @asPyRangesDecorator
-def Modbam2Pr(path, min_depth, max_depth, keep_raw):
+def Modbam2Pr(path, min_depth=10, max_depth=False, keep_raw=False):
     return readModbam2bed(path, min_depth, max_depth, keep_raw)
 
 @asPyRangesDecorator
-def Bismark2Pr(path, mod, min_depth, max_depth, keep_raw):
+def Bismark2Pr(path, mod, min_depth=10, max_depth=False, keep_raw=False):
     return readBismarkZeroCov(path, mod, min_depth, max_depth, keep_raw)
 
 def loadChromSize():
@@ -154,6 +206,7 @@ def loadChromSize():
 
 def optimisedResample(merged_df, left, right):
     """
+    DEPRECATED
     Calculates the most common shared read count between two methods then extracts only CpG sites with that read count.
     :param str left: The column name for readcounts in the left dataframe.
     :param str right: The column name for readcounts in the right dataframe. 
