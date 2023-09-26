@@ -2,6 +2,8 @@ import pandas as pd
 from math import sqrt
 import pyranges as pr
 import numpy as np
+from scipy import stats
+from sklearn import metrics 
 
 def filterDepth(df, 
                 min_depth: int = 10, 
@@ -17,6 +19,20 @@ def filterDepth(df,
         filtered_df = filtered_df.loc[filtered_df.loc[:, "readCount"] < (average + 3*sqrt(average))]
 
     return filtered_df
+
+def compareStats(x, y):
+    """
+    Compares two Series and outputs a Series of summary statistics. 
+    """
+    
+    d = {
+        "Pearson" : [round(stats.pearsonr(x, y).statistic, 3), stats.pearsonr(x, y).pvalue],
+        "Spearman" : [round(stats.spearmanr(x, y).statistic, 3), stats.spearmanr(x, y).pvalue],
+        "RMSE" : metrics.mean_squared_error(x, y, squared=False),
+        "Mean Absolute Error" : metrics.mean_absolute_error(x, y),
+        "R-squared" : metrics.r2_score(x, y)
+    }
+    return pd.Series(d)
 
 def readModkit(
         path: str, 
