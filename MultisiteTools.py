@@ -187,29 +187,32 @@ class Multisite:
     def raw_means(self):
         return self._raw_means
     
-    def __calculate_ratio_to_mean(self, column: str):
+    def __calculate_ratio_to_mean(self, column: str, native=False):
         """
         Calculates ratio difference between the grouped percentage modification and the ORIGINAL CPG MODIFICATION RATE.
         """
-        new_col = self.df[column].divide(self.raw_means[column])
-        return new_col
-    
-    def __calculate_log2_difference(self, column: str, include_zeros=False):
-        if include_zeros:
-            add = 1
+        if not native:
+            epsilon = 1
         else: 
-            add = 0
+            epsilon = 0
+
+        x = self.df[column].add(epsilon)
+        x_bar = self.raw_means[column] + epsilon
         
+        ratio = x.divide(x_bar)
+        return ratio
+    
+    def __calculate_log2_difference(self, column: str, native=False):
         with np.errstate(divide="ignore"):
             log2_col = np.log2(
-                np.add(self.__calculate_ratio_to_mean(column), add))
+                self.__calculate_ratio_to_mean(column, native))
         return log2_col
 
-    def enrichment_over_mean(self, include_zeros=False):
+    def enrichment_over_mean(self, native=False):
         """
         Provides additional columns with log_2 scale scores showing enrichment relative to the mean for 5mC and 5hmC. 
 
-        :param bool include_zeros: Whether groups with an average CpG modification of zero are kept. Adds 1 to the ratio calculation to avoid zero division. 
+        :param bool native: Whether the log transformation of the ratio is done as is. Features with average modification of 0% are lost. 
         """
         df = self.df.copy()
 
@@ -218,7 +221,7 @@ class Multisite:
 
         for col in percent_cols:
             new_col_name = col.replace("percentMeth", "log2enrichment")
-            new_col = self.__calculate_log2_difference(col, include_zeros)
+            new_col = self.__calculate_log2_difference(col, native)
             new_cols.append(pd.Series(new_col, name=new_col_name))
 
         for col in new_cols:
