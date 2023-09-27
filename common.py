@@ -121,6 +121,7 @@ def readBismarkZeroCov(
         return df.drop(columns=["N_mod", "N_unmod"])
     
 def pieData(annotated_peak_data, 
+            count_column: str,
             min_depth: int = 0, 
             max_depth: int = np.inf
             ): 
@@ -135,8 +136,8 @@ def pieData(annotated_peak_data,
     if min_depth > 0 or max_depth < np.inf:
         annotated_peak_data = annotated_peak_data.query(f"total_peakDepth >= {min_depth} & total_peakDepth <= {max_depth}")
 
-    pie_labels = annotated_peak_data["feature_type"].value_counts().index
-    pie_values = annotated_peak_data["feature_type"].value_counts().values
+    pie_labels = annotated_peak_data[f"{count_column}"].value_counts().index
+    pie_values = annotated_peak_data[f"{count_column}"].value_counts().values
 
     return pie_values, pie_labels     
 
