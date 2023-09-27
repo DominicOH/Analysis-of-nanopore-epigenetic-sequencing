@@ -65,7 +65,6 @@ class ReadTable():
         read_pr = pr.PyRanges(df)
         annotated_df = read_pr.join(include_bed, False, suffix="_Gene").as_df()
 
-        # because of eager loading in GeneReadTable, this can mask downstream errors
         annotated_df = annotated_df.query(f"Name == '{gene_name}'")
         new_read_table = annotated_df.loc[:, ("Chromosome", "Start", "End", "Strand", "read_id", "classification")]
         return GeneReadTable(new_read_table, gene_name)
@@ -119,7 +118,10 @@ class GeneReadTable(ReadTable):
                    min_cpg_count_proportion: float = None,
                    quiet: bool = False):
         """
-        Generate a seaborn clustermap image of reads within the read table. 
+        Plot clusters of reads within the read table using a seaborn clustermap. Image is figure level. For axes level plotting use 'heatmap()'.
+
+        :param float minimum_read_count_proportion: CpG sites must be present in at least this proportion of all reads in the dataframe (default: 0.05)
+        :param float min_cpg_count_proportion: Reads must cover at least this proportion of all CpG sites in the dataframe (default: 0.05).
         """
         if minimum_read_count_proportion or min_cpg_count_proportion:
             self.__update_matrices(minimum_read_count_proportion, min_cpg_count_proportion)
@@ -151,6 +153,13 @@ class GeneReadTable(ReadTable):
                 minimum_read_count_proportion: float = None, 
                 min_cpg_count_proportion: float = None, 
                 ax=None):
+        
+        """
+        Plot clusters of reads within the read table using a seaborn heatmap. The axes-level equivalent of 'clustermap()'.
+
+        :param float minimum_read_count_proportion: CpG sites must be present in at least this proportion of all reads in the dataframe (default: 0.05)
+        :param float min_cpg_count_proportion: Reads must cover at least this proportion of all CpG sites in the dataframe (default: 0.05).
+        """
         data2d = self.clustermap(minimum_read_count_proportion, 
                                  min_cpg_count_proportion,
                                  quiet=True).data2d
@@ -178,3 +187,30 @@ class GeneReadTable(ReadTable):
         ax.set_xlabel(None)
 
         return hm
+    
+    def cluster_extract(self, 
+                        minimum_read_count_proportion: float = None,
+                        min_cpg_count_proportion: float = None):
+        """
+        Clusters reads within the table based on modification state.
+        """
+        
+        if minimum_read_count_proportion or min_cpg_count_proportion:
+            self.__update_matrices(minimum_read_count_proportion, min_cpg_count_proportion)
+
+        read_matched_with_cluster = pd.DataFrame(zip(list(self._read_matrix.T.columns), self._cluster_table),
+            columns=["read_id", "cluster"]) 
+        
+        annotated_table = pd.merge(self.df, read_matched_with_cluster, "inner")
+
+        c2_meth = annotated_table.groupby("cluster")["classification"].value_counts()[(2, "m")]
+        c1_meth = annotated_table.groupby("cluster")["classification"].value_counts()[(1, "m")]
+
+        if c1_meth > c2_meth:
+            output_df = annotated_table.replace({"cluster" : {1 : "Methylated", 2 : "Unmethylated"}})
+        else: 
+            output_df = annotated_table.replace({"cluster" : {2 : "Methylated", 1 : "Unmethylated"}})
+
+        return output_df
+        
+
