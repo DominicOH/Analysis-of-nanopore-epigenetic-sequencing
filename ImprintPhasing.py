@@ -1,12 +1,11 @@
 import pandas as pd
 from scipy.spatial import distance
 from scipy.cluster import hierarchy
-import functools
 import seaborn as sns
 
 class ModBaseAssemblage:
     """
-    A pandas DataFrame object built to contain modified bases 
+    A pandas DataFrame object built to contain modified bases.
     """
     def __init__(self, df: pd.DataFrame):
         self.df = df
