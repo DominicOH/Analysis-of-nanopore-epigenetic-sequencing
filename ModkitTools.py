@@ -1,8 +1,9 @@
+import pandas as pd
+import pyranges as pr
 from scipy.spatial import distance
 from scipy.cluster import hierarchy
 import seaborn as sns
 import matplotlib.pyplot as plt
-import string
 
 class ModkitExtract():
     """
@@ -45,29 +46,29 @@ class ModkitExtract():
 class ReadTable():
     def __init__(self, df, include_bed=None):
         self.df = df
-        self.include_bed = include_bed
+        self._include_bed = include_bed
 
     def set_include_bed(self, path):
-        self.include_bed = pr.read_bed(path)
+        self._include_bed = pr.read_bed(path)
         return 
+    
+    @property
+    def include_bed(self):
+        return self._include_bed.as_df()
 
     def select_gene(self, gene_name):
-        assert self.include_bed is not None, "No include bed attached."
+        assert self._include_bed is not None, "Need to attach a target region bedfile with '.set_include_bed()"
 
         df = self.df
         
-        include_bed = self.include_bed
+        include_bed = self._include_bed
         read_pr = pr.PyRanges(df)
         annotated_df = read_pr.join(include_bed, False, suffix="_Gene").as_df()
 
         # because of eager loading in GeneReadTable, this can mask downstream errors
-        try:
-            annotated_df = annotated_df.query(f"Name == '{gene_name}'")
-            new_read_table = annotated_df.loc[:, ("Chromosome", "Start", "End", "Strand", "read_id", "classification")]
-            return GeneReadTable(new_read_table, gene_name)
-        except:
-            print(f"No gene {gene_name} found.")
-            return annotated_df
+        annotated_df = annotated_df.query(f"Name == '{gene_name}'")
+        new_read_table = annotated_df.loc[:, ("Chromosome", "Start", "End", "Strand", "read_id", "classification")]
+        return GeneReadTable(new_read_table, gene_name)
 
 class GeneReadTable(ReadTable):
     def __init__(self, df, gene_name, include_bed=None):
@@ -78,8 +79,8 @@ class GeneReadTable(ReadTable):
         self._cluster_table = self.__generate_flat_clusters()
     
     def __generate_read_matrix(self, 
-                             minimum_read_count_proportion: float = 0.5, 
-                             min_cpg_count_proportion: float = 0.5):
+                             minimum_read_count_proportion: float = 0.05, 
+                             min_cpg_count_proportion: float = 0.05):
         df = self.df 
         read_matrix = df.pivot(index="read_id", columns="Start", values="classification")
         read_matrix = read_matrix.replace(["c", "m", "h"], [0, 1, 2])
