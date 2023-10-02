@@ -24,13 +24,22 @@ def compareStats(x, y):
     """
     Compares two Series and outputs a Series of summary statistics. 
     """
-    
+    ks = stats.ks_2samp(x, y)
+    mw = stats.mannwhitneyu(x, y)
+    cvm = stats.cramervonmises_2samp(x, y)
+    ad = stats.anderson_ksamp([x, y])
     d = {
         "Pearson" : [round(stats.pearsonr(x, y).statistic, 3), stats.pearsonr(x, y).pvalue],
         "Spearman" : [round(stats.spearmanr(x, y).statistic, 3), stats.spearmanr(x, y).pvalue],
+        "Kendall" : [round(stats.kendalltau(x, y).statistic, 3), round(stats.kendalltau(x, y).pvalue, 3)], 
+        "Shapiro-Wilk" : [stats.shapiro(x).pvalue, stats.shapiro(y).pvalue],
         "RMSE" : metrics.mean_squared_error(x, y, squared=False),
         "Mean Absolute Error" : metrics.mean_absolute_error(x, y),
-        "R-squared" : metrics.r2_score(x, y)
+        "Median Absolute Error" : metrics.median_absolute_error(x, y),
+        "KS" : [ks.statistic, ks.pvalue],
+        "MW" : [mw.statistic, mw.pvalue],
+        "CVM" : [cvm.statistic, cvm.pvalue],
+        "AD" : [ad.statistic, ad.pvalue]
     }
     return pd.Series(d)
 
@@ -204,6 +213,10 @@ def asPyRangesDecorator(func):
         except:
             print("Failed")
     return wrapper
+
+@asPyRangesDecorator
+def Modkit2Pr(path, min_depth=10, max_depth=True, keep_raw=False):
+    return readModkit(path, min_depth, max_depth, keep_raw)
 
 @asPyRangesDecorator
 def Modbam2Pr(path, min_depth=10, max_depth=False, keep_raw=False):
