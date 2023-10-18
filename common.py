@@ -28,6 +28,8 @@ def compareStats(x, y):
     mw = stats.mannwhitneyu(x, y)
     cvm = stats.cramervonmises_2samp(x, y)
     ad = stats.anderson_ksamp([x, y])
+    t_test = stats.ttest_ind(x, y)
+
     d = {
         "Pearson" : [round(stats.pearsonr(x, y).statistic, 3), stats.pearsonr(x, y).pvalue],
         "Spearman" : [round(stats.spearmanr(x, y).statistic, 3), stats.spearmanr(x, y).pvalue],
@@ -39,7 +41,8 @@ def compareStats(x, y):
         "KS" : [ks.statistic, ks.pvalue],
         "MW" : [mw.statistic, mw.pvalue],
         "CVM" : [cvm.statistic, cvm.pvalue],
-        "AD" : [ad.statistic, ad.pvalue]
+        "AD" : [ad.statistic, ad.pvalue],
+        "T-Test" : [t_test.statistic, t_test.pvalue] 
     }
     return pd.Series(d)
 

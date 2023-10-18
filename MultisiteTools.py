@@ -47,7 +47,6 @@ class CpGRange(pr.PyRanges):
 
     @property
     def __percent_cols(self):
-        # Note: would be good to handle dataframes that have both
         df = self.df
 
         defaults = ["percentMeth_5mC_Nanopore", "percentMeth_5mC_oxBS", "percentMeth_5hmC_Nanopore", "percentMeth_5hmC_TAB"]
