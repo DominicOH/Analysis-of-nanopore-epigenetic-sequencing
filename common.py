@@ -24,6 +24,8 @@ def compareStats(x, y):
     """
     Compares two Series and outputs a Series of summary statistics. 
     """
+    r = stats.pearsonr(x, y)
+    p = stats.spearmanr(x, y)
     ks = stats.ks_2samp(x, y)
     mw = stats.mannwhitneyu(x, y)
     cvm = stats.cramervonmises_2samp(x, y)
@@ -31,10 +33,10 @@ def compareStats(x, y):
     t_test = stats.ttest_ind(x, y)
 
     d = {
-        "Pearson" : [round(stats.pearsonr(x, y).statistic, 3), stats.pearsonr(x, y).pvalue],
-        "Spearman" : [round(stats.spearmanr(x, y).statistic, 3), stats.spearmanr(x, y).pvalue],
-        "Kendall" : [round(stats.kendalltau(x, y).statistic, 3), round(stats.kendalltau(x, y).pvalue, 3)], 
-        "Shapiro-Wilk" : [stats.shapiro(x).pvalue, stats.shapiro(y).pvalue],
+        "Pearson_r" : round(r.statistic, 2),
+        "Spearman_p" : round(p.statistic, 2),
+        "Correlation_p_values" : [round(r.pvalue, 2), round(p.pvalue, 2)],
+        "Kendall" : round(stats.kendalltau(x, y).statistic, 2), 
         "RMSE" : metrics.mean_squared_error(x, y, squared=False),
         "Mean Absolute Error" : metrics.mean_absolute_error(x, y),
         "Median Absolute Error" : metrics.median_absolute_error(x, y),
