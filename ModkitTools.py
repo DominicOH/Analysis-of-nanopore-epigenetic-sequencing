@@ -78,19 +78,19 @@ class GeneReadTable(ReadTable):
         self._cluster_table = self.__generate_flat_clusters()
     
     def __generate_read_matrix(self, 
-                             minimum_read_count_proportion: float = 0.05, 
-                             min_cpg_count_proportion: float = 0.05):
+                             minimum_read_proportion: float = 0.1, 
+                             min_cpg_proportion: float = 0.15):
         df = self.df 
         read_matrix = df.pivot(index="read_id", columns="Start", values="classification")
         read_matrix = read_matrix.replace(["c", "m", "h"], [0, 1, 2])
         # first: remove CpGs present in fewer than the minimum count of reads
         total_reads = len(read_matrix.index)
-        read_matrix = read_matrix.dropna(thresh=minimum_read_count_proportion*total_reads, 
+        read_matrix = read_matrix.dropna(thresh=minimum_read_proportion*total_reads, 
                       axis="columns") 
         
         # next: remove reads containing fewer than the minimum count of CpG sites
         total_sites = len(read_matrix.columns)
-        read_matrix = read_matrix.dropna(thresh=min_cpg_count_proportion*total_sites, 
+        read_matrix = read_matrix.dropna(thresh=min_cpg_proportion*total_sites, 
                       axis="index") 
         
         return read_matrix
@@ -107,24 +107,24 @@ class GeneReadTable(ReadTable):
         cluster_table = hierarchy.fcluster(linkage_matrix, 2, "maxclust")
         return cluster_table
     
-    def __update_matrices(self, minimum_read_count_proportion, min_cpg_count_proportion):
-        self._read_matrix = self.__generate_read_matrix(minimum_read_count_proportion, min_cpg_count_proportion)
+    def __update_matrices(self, minimum_read_proportion, min_cpg_proportion):
+        self._read_matrix = self.__generate_read_matrix(minimum_read_proportion, min_cpg_proportion)
         self._linkage_matrix = self.__generate_linkage_matrix()
         self._cluster_table = self.__generate_flat_clusters()
         return 
     
     def clustermap(self, 
-                   minimum_read_count_proportion: float = None, 
-                   min_cpg_count_proportion: float = None,
+                   minimum_read_proportion: float = None, 
+                   min_cpg_proportion: float = None,
                    quiet: bool = False):
         """
         Plot clusters of reads within the read table using a seaborn clustermap. Image is figure level. For axes level plotting use 'heatmap()'.
 
-        :param float minimum_read_count_proportion: CpG sites must be present in at least this proportion of all reads in the dataframe (default: 0.05)
-        :param float min_cpg_count_proportion: Reads must cover at least this proportion of all CpG sites in the dataframe (default: 0.05).
+        :param float minimum_read_proportion: CpG sites must be present in at least this proportion of all reads in the dataframe (default: 0.05)
+        :param float min_cpg_proportion: Reads must cover at least this proportion of all CpG sites in the dataframe (default: 0.05).
         """
-        if minimum_read_count_proportion or min_cpg_count_proportion:
-            self.__update_matrices(minimum_read_count_proportion, min_cpg_count_proportion)
+        if minimum_read_proportion or min_cpg_proportion:
+            self.__update_matrices(minimum_read_proportion, min_cpg_proportion)
 
         cm = sns.clustermap(self._read_matrix.fillna(-1), 
                             mask=self._read_matrix.isnull(), 
@@ -150,18 +150,18 @@ class GeneReadTable(ReadTable):
         return cm
     
     def heatmap(self, 
-                minimum_read_count_proportion: float = None, 
-                min_cpg_count_proportion: float = None, 
+                minimum_read_proportion: float = None, 
+                min_cpg_proportion: float = None, 
                 ax=None):
         
         """
         Plot clusters of reads within the read table using a seaborn heatmap. The axes-level equivalent of 'clustermap()'.
 
-        :param float minimum_read_count_proportion: CpG sites must be present in at least this proportion of all reads in the dataframe (default: 0.05)
-        :param float min_cpg_count_proportion: Reads must cover at least this proportion of all CpG sites in the dataframe (default: 0.05).
+        :param float minimum_read_proportion: CpG sites must be present in at least this proportion of all reads in the dataframe (default: 0.05)
+        :param float min_cpg_proportion: Reads must cover at least this proportion of all CpG sites in the dataframe (default: 0.05).
         """
-        data2d = self.clustermap(minimum_read_count_proportion, 
-                                 min_cpg_count_proportion,
+        data2d = self.clustermap(minimum_read_proportion, 
+                                 min_cpg_proportion,
                                  quiet=True).data2d
         mask = data2d == -1
 
@@ -177,26 +177,28 @@ class GeneReadTable(ReadTable):
         right = ax.get_xlim()[1]*0.9
         left = ax.get_xlim()[0] + 0.14*ax.get_xlim()[1]
 
+        cluster_props = self.cluster_extract().groupby(["cluster", "read_id"]).count().reset_index()["cluster"].value_counts()
+
         chromosome = self.df["Chromosome"].values[0]
 
         ax.set_xticks([left, right], 
             labels=[chromosome + ": " + str(data2d.columns[0]), str(data2d.columns[-1])], rotation="horizontal")
     
-        ax.set_title(f"{self.gene_name}", loc="center", fontsize=5)
+        ax.set_title(f"{self.gene_name}\nU = {cluster_props['Unmethylated']}; M = {cluster_props['Methylated']}", loc="center", fontsize=5)
         ax.set_ylabel(None)
         ax.set_xlabel(None)
 
         return hm
     
     def cluster_extract(self, 
-                        minimum_read_count_proportion: float = None,
-                        min_cpg_count_proportion: float = None):
+                        minimum_read_proportion: float = None,
+                        min_cpg_proportion: float = None):
         """
         Clusters reads within the table based on modification state.
         """
         
-        if minimum_read_count_proportion or min_cpg_count_proportion:
-            self.__update_matrices(minimum_read_count_proportion, min_cpg_count_proportion)
+        if minimum_read_proportion or min_cpg_proportion:
+            self.__update_matrices(minimum_read_proportion, min_cpg_proportion)
 
         read_matched_with_cluster = pd.DataFrame(zip(list(self._read_matrix.T.columns), self._cluster_table),
             columns=["read_id", "cluster"]) 
