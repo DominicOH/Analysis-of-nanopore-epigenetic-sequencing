@@ -148,7 +148,10 @@ def pieData(annotated_peak_data,
         - pie_labels - Labels for each value in the pie chart. 
     """
     if min_depth > 0 or max_depth < np.inf:
-        annotated_peak_data = annotated_peak_data.query(f"total_peakDepth >= {min_depth} & total_peakDepth <= {max_depth}")
+        try: 
+            annotated_peak_data = annotated_peak_data.query(f"total_peakDepth >= {min_depth} & total_peakDepth <= {max_depth}")
+        except:
+            print("Warning: Not filtering peak depth; not selected or not possible.")
 
     pie_labels = annotated_peak_data[f"{count_column}"].value_counts().index
     pie_values = annotated_peak_data[f"{count_column}"].value_counts().values
