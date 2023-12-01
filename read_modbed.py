@@ -39,7 +39,7 @@ def readModkit(
 ):
     """
     Reads the bedmMethyl output of Modkit pileup into a pd.DataFrame. 
-    NOTE: It's important that modkit pileup is run with the --only-tabs flag. Otherwise important data columns are separated only by spaces and missed by tab-parsing. 
+    Note: It's important that modkit pileup is run with the --only-tabs flag. Otherwise important data columns are separated only by spaces and missed by tab-parsing. 
 
     :param str path: Filepath of the bedMethyl file. 
     :param int min_depth: The minimum readcount of CpG sites.
@@ -99,7 +99,7 @@ def readBismarkZeroCov(
     :return: Pandas DataFrame object 
 
     """
-    
+
     if mod == "5mC":
         meth_col = "percentMeth_5mC"
     elif mod == "5hmC":
