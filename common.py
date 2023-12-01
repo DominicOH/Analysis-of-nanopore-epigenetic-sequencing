@@ -188,7 +188,7 @@ def readModbam2bed(path: str,
 
 def asPyRanges(df):
     """
-    Decorator function to change pandas DataFrame colnames for PyRanges compatibility. 
+    Function to change pandas DataFrame colnames for PyRanges compatibility. 
     """
     print("Changing colnames to be PyRanges compatible...")
     try:
@@ -208,18 +208,7 @@ def asPyRangesDecorator(func):
     """
     def wrapper(*args, **kwargs):
         df = func(*args, **kwargs)
-        print("Changing colnames to be PyRanges compatible...")
-        try:
-            df = df.rename(columns={
-                "chromosome" : "Chromosome",
-                "chromStart" : "Start",
-                "chromEnd" : "End"
-            }, errors="ignore")
-            print("Done")
-
-            return pr.PyRanges(df)
-        except:
-            print("Failed")
+        return asPyRanges(df)
     return wrapper
 
 @asPyRangesDecorator
@@ -241,19 +230,3 @@ def loadChromSize():
     df["Start"] = 0
 
     return df[["Chromosome", "Start", "End"]]
-
-def optimisedResample(merged_df, left, right):
-    """
-    DEPRECATED
-    Calculates the most common shared read count between two methods then extracts only CpG sites with that read count.
-    :param str left: The column name for readcounts in the left dataframe.
-    :param str right: The column name for readcounts in the right dataframe. 
-    """
-    resampling = merged_df.groupby([left])[right].value_counts().sort_values(ascending=False).reset_index(name="Count")
-    maxid = resampling.loc[resampling.loc[:, left] == resampling.loc[:, right], "Count"].idxmax()
-    most_common = resampling.iloc[maxid, :][left]
-    count = resampling.iloc[maxid, :]["Count"]
-
-    print(f"Most common readcount is {most_common} with {count} CpGs.")
-
-    return merged_df.loc[(merged_df.loc[:, left] == most_common) & (merged_df.loc[:, right] == most_common)]
