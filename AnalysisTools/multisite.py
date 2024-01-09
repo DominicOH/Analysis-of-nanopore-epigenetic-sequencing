@@ -1,12 +1,54 @@
 import pandas as pd
 import pyranges as pr
-import FeatureReferences
+import annotation_features
+from read_modbed import readModkit, readBismarkZeroCov
 import numpy as np
 import warnings
 from common import *
 
+def asPyRanges(df):
+    """
+    Function to change pandas DataFrame colnames for PyRanges compatibility. 
+    """
+    print("Changing colnames to be PyRanges compatible...")
+    try:
+        df = df.rename(columns={
+            "chromosome" : "Chromosome",
+            "chromStart" : "Start",
+            "chromEnd" : "End"
+        }, errors="ignore")
+        print("Done")
+        return pr.PyRanges(df)
+    except:
+        return print("Failed")
+
+def asPyRangesDecorator(func):
+    """
+    Decorator function to change pandas DataFrame colnames for PyRanges compatibility. Same as the above but in decorator form!
+    """
+    def wrapper(*args, **kwargs):
+        df = func(*args, **kwargs)
+        return asPyRanges(df)
+    return wrapper
+
+@asPyRangesDecorator
+def Modkit2Pr(path, min_depth=10, max_depth=True, keep_raw=False):
+    return readModkit(path, min_depth, max_depth, keep_raw)
+
+@asPyRangesDecorator
+def Bismark2Pr(path, mod, min_depth=10, max_depth=False, keep_raw=False):
+    return readBismarkZeroCov(path, mod, min_depth, max_depth, keep_raw)
+
+def loadChromSize():
+    path = "./feature_references/mm39.chrom.sizes"
+
+    df = pd.read_csv(path, sep="\t", names=["Chromosome", "End"])
+    df["Start"] = 0
+
+    return df[["Chromosome", "Start", "End"]]
+
 def makeCpGRange(nanopore_path, bis_path, mod="5hmC"):
-    nanopore_pr = Modbam2Pr(nanopore_path)
+    nanopore_pr = Modkit2Pr(nanopore_path)
     bis_path = Bismark2Pr(bis_path, mod)
 
     if mod == "5hmC":
@@ -75,7 +117,7 @@ class CpGRange(pr.PyRanges):
         return raw_means
 
     def __annotate_with_multiple(self, annotation_dir_path):
-        annotation_ref = FeatureReferences.featureRefPyRange(annotation_dir_path).unstrand()
+        annotation_ref = annotation_features.featureRefPyRange(annotation_dir_path).unstrand()
 
         with warnings.catch_warnings():
             warnings.simplefilter(action="ignore", category=FutureWarning)
@@ -84,7 +126,7 @@ class CpGRange(pr.PyRanges):
         return annotated_df
     
     def __annotate_with_single(self, feature_path):
-        annotation_ref = FeatureReferences.Reference(feature_path).df
+        annotation_ref = annotation_features.Reference(feature_path).df
 
         # drops redundant columns 
         annotation_ref = annotation_ref.drop(
