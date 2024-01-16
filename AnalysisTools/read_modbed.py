@@ -14,6 +14,17 @@ from math import sqrt
 
 ##### Function definitions #####
 
+def checkBisOrModkit(path):
+    with open(path, "r") as file:
+        fline = file.readline()
+        line_len = len("".join(fline).split("\t"))
+        if line_len == 18:
+            return "Modkit"
+        elif line_len == 6:
+            return "Bismark"
+        else:
+            raise ValueError("Format not recognised.")
+
 def filterDepth(df, 
                 min_depth: int = 10, 
                 apply_max_depth: bool = False):
@@ -118,6 +129,29 @@ def readBismarkZeroCov(
         return df
     else: 
         return df.drop(columns=["N_mod", "N_unmod"])
+    
+def openReps(rep_dir, min_depth=10, modbase=None):
+    """
+    Opens a directory of modkit '.bedMethyl' files or bismark_methylation_extractor '.zero.cov' files into a pd.Dataframe. 
+    """
+    rep_ls = []
+    for index, file in enumerate(subprocess.check_output(["ls", rep_dir]).split()): 
+        decoded_path = rep_dir + bytes.decode(file)
+
+        if read_modbed.checkBisOrModkit(decoded_path) == "Bismark":
+            if not modbase:
+                raise ValueError("Bismark output requires modbase specification in args. ['5mC'|'5hmC']")
+            
+            mod_df = read_modbed.readBismarkZeroCov(decoded_path, modbase, min_depth, False)
+            mod_df = mod_df.assign(Replicate = f"Rep. {index + 1}")
+            rep_ls.append(mod_df)
+
+        elif read_modbed.checkBisOrModkit(decoded_path) == "Modkit": 
+            mod_df = read_modbed.readModkit(decoded_path, min_depth, False)
+            mod_df = mod_df.assign(Replicate = f"Rep. {index + 1}")
+            rep_ls.append(mod_df)
+
+    return pd.concat(rep_ls)
 
 ##### Main function #####
 
