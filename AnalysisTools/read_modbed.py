@@ -10,6 +10,7 @@ Developed using mod_kit 0.1.13 and Bismark Version: v0.24.0.
 
 import pandas as pd
 import argparse
+import subprocess
 from math import sqrt
 
 ##### Function definitions #####
@@ -138,16 +139,16 @@ def openReps(rep_dir, min_depth=10, modbase=None):
     for index, file in enumerate(subprocess.check_output(["ls", rep_dir]).split()): 
         decoded_path = rep_dir + bytes.decode(file)
 
-        if read_modbed.checkBisOrModkit(decoded_path) == "Bismark":
+        if checkBisOrModkit(decoded_path) == "Bismark":
             if not modbase:
-                raise ValueError("Bismark output requires modbase specification in args. ['5mC'|'5hmC']")
+                raise ValueError("Bismark input requires modbase specification in args. ['5mC'|'5hmC']")
             
-            mod_df = read_modbed.readBismarkZeroCov(decoded_path, modbase, min_depth, False)
+            mod_df = readBismarkZeroCov(decoded_path, modbase, min_depth, False)
             mod_df = mod_df.assign(Replicate = f"Rep. {index + 1}")
             rep_ls.append(mod_df)
 
-        elif read_modbed.checkBisOrModkit(decoded_path) == "Modkit": 
-            mod_df = read_modbed.readModkit(decoded_path, min_depth, False)
+        elif checkBisOrModkit(decoded_path) == "Modkit": 
+            mod_df = readModkit(decoded_path, min_depth, False)
             mod_df = mod_df.assign(Replicate = f"Rep. {index + 1}")
             rep_ls.append(mod_df)
 
