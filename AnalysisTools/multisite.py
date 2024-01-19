@@ -183,6 +183,7 @@ class Multisite:
     Note: Not currently built to accommodate CpG 5mC.
     """
     def __init__(self, df, percent_cols=None):
+        self.df = df
         self.__percent_cols = percent_cols
 
     @property
