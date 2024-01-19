@@ -3,7 +3,8 @@ import pyranges as pr
 from AnalysisTools import annotation_features
 from AnalysisTools.read_modbed import readModkit, readBismarkZeroCov
 import numpy as np
-import warningsfrom AnalysisTools.common import *
+import warnings
+from AnalysisTools.common import *
 
 def asPyRanges(df):
     """
@@ -117,8 +118,8 @@ class CpGRange(pr.PyRanges):
         annotation_ref = annotation_features.featureRefPyRange(annotation_dir_path).unstrand()
 
         with warnings.catch_warnings():
-            warnings.simplefilter(action="ignore", category=FutureWarning)
-            annotated_df = annotation_ref.join(self, False, "right", suffix="_CpG", apply_strand_suffix=False).as_df()
+             warnings.simplefilter(action="ignore", category=FutureWarning)
+             annotated_df = annotation_ref.join(self, False, "right", suffix="_CpG", apply_strand_suffix=False).as_df()
 
         return annotated_df
     
@@ -151,7 +152,8 @@ class CpGRange(pr.PyRanges):
     def group_by_annotation(self, 
               intersect_with: str,
               annotation_path: str,
-              agg_cols_funcs: dict
+              agg_cols_funcs: dict,
+              replace_gaps: dict
               ):
         """
         Groups CpGs based on intersecting annotations. Outputs a Pandas DataFrame.
@@ -171,14 +173,11 @@ class CpGRange(pr.PyRanges):
         grouped_df = intersect_df.groupby(["Chromosome", "Start", "End", "feature_type"], 
                                           observed=True).agg(agg_cols_funcs)
         
-        if intersecting_on in ["genes", "features"]: 
-            output_df = grouped_df.replace("-1", "Intergenic")
-        elif intersecting_on == "cgi":
-            output_df = grouped_df.replace("-1", "Open sea")
-        elif intersecting_on == "repeats":
-            output_df = grouped_df.replace("-1", None).dropna()
+        grouped_df = grouped_df.replace(replace_gaps)
 
-        return  Multisite(output_df.rename(columns={"Cluster" : "CpG_count"}), raw_means=self.raw_means, percent_cols=self.__percent_cols)
+        return  Multisite(grouped_df, 
+                          raw_means=self.raw_means, 
+                          percent_cols=self.__percent_cols)
     
 class Multisite:
     """
