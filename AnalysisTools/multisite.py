@@ -200,8 +200,7 @@ class Multisite:
 
     Note: Not currently built to accommodate CpG 5mC.
     """
-    def __init__(self, df, cpg_threshold=1, raw_means=None, percent_cols=None):
-        self._df = df.loc[df.loc[:, "CpG_count"].ge(cpg_threshold)]
+    def __init__(self, df, raw_means=None, percent_cols=None):
         self._raw_means = raw_means
         self.__percent_cols = percent_cols
 
