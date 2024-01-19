@@ -100,24 +100,7 @@ class CpGRange(pr.PyRanges):
         for col in defaults: 
             if col in df.columns:
                 cols_present.append(col)
-        return cols_present
-        
-    @property
-    def raw_means(self):
-        """
-        This is intended to be used for downstream applications - saving the mean modification % per CpG. 
-        """
-        list_of_cols = ["percentMeth_5hmC_TAB", "percentMeth_5hmC_Nanopore", "percentMeth_5mC_oxBS", "percentMeth_5mC_Nanopore"]
-        raw_means = {}
-        df = self.df
-        for col in list_of_cols:
-            try:
-                raw_means.update({
-                    col : df[col].mean()
-                })
-            except: 
-                pass        
-        return raw_means    
+        return cols_present  
     
     def __annotate_with_multiple(self, annotation_dir_path):
         annotation_ref = annotation_features.featureRefPyRange(annotation_dir_path).unstrand()
@@ -158,7 +141,7 @@ class CpGRange(pr.PyRanges):
                       .reset_index()
                       )
         
-        grouped_tiles = Multisite(grouped_df, raw_means=self.raw_means, percent_cols=self.__percent_cols)
+        grouped_tiles = Multisite(grouped_df, percent_cols=self.__percent_cols)
            
         return grouped_tiles
     
@@ -191,7 +174,6 @@ class CpGRange(pr.PyRanges):
         grouped_df = grouped_df
 
         return  Multisite(grouped_df, 
-                          raw_means=self.raw_means, 
                           percent_cols=self.__percent_cols)
     
 class Multisite:
@@ -200,18 +182,35 @@ class Multisite:
 
     Note: Not currently built to accommodate CpG 5mC.
     """
-    def __init__(self, df, raw_means=None, percent_cols=None):
-        self._raw_means = raw_means
+    def __init__(self, df, percent_cols=None):
         self.__percent_cols = percent_cols
 
     @property
     def df(self):
         return self._df
     
-    @property
-    def raw_means(self):
-        return self._raw_means
-    
+    def compareCols(self, cols: list, other, log=True, epsilon=1):
+        """
+        Compares columns against a value/series/list of values. 
+        
+        Returns new columns with the ratio (optional log ratio) of values to one another. 
+        """
+        df = self.df
+        if other is int:
+            other = [other for i in range(len(cols))]
+
+        for col, comparison in zip(cols, other):
+            ratio_name = f"ratio_{col}"
+            ratio_vals = df.apply(lambda row: (row[col] + epsilon)/(comparison + epsilon), axis=1)
+            df[ratio_name] = ratio_vals
+            
+            if log: 
+                logratio_name = f"log2_ratio_{col}"
+                logratio_vals = df.apply(lambda row: np.log2(row[ratio_name]), axis=1)
+                df[logratio_name] = logratio_vals 
+
+        return df
+            
     def __calculate_ratio_to_mean(self, column: str, native=False):
         """
         Calculates ratio difference between the grouped percentage modification and the ORIGINAL CPG MODIFICATION RATE.
@@ -222,6 +221,7 @@ class Multisite:
             epsilon = 0
 
         x = self.df[column].add(epsilon)
+        # removing
         x_bar = self.raw_means[column] + epsilon
         
         ratio = x.divide(x_bar)
@@ -252,4 +252,4 @@ class Multisite:
         for col in new_cols:
             df = df.assign(**{col.name : col.values})
         
-        return Multisite(df, raw_means=self.raw_means)
+        return Multisite(df)
