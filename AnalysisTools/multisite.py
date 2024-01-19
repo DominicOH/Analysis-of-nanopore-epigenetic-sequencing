@@ -79,11 +79,14 @@ class CpGRange(pr.PyRanges):
     """
     def __init__(self, df):
         # give minion and prom datasets the same name for downstream compatibility
-        df = df.rename(columns={
-            "percentMeth_5hmC_Bisulphite" : "percentMeth_5hmC_TAB",
-            "percentMeth_5mC_Bisulphite" : "percentMeth_5mC_oxBS"
-            }, 
-            errors="ignore")
+        try: 
+            df = df.rename(columns={
+                "percentMeth_5hmC_Bisulphite" : "percentMeth_5hmC_TAB",
+                "percentMeth_5mC_Bisulphite" : "percentMeth_5mC_oxBS"
+                }, 
+                errors="ignore")
+        except:
+            Warning("This is already a PyRange.")
         
         super().__init__(df, df)
 
@@ -113,7 +116,9 @@ class CpGRange(pr.PyRanges):
                     col : df[col].mean()
                 })
             except: 
-                pass        return raw_means    
+                pass        
+        return raw_means    
+    
     def __annotate_with_multiple(self, annotation_dir_path):
         annotation_ref = annotation_features.featureRefPyRange(annotation_dir_path).unstrand()
 
@@ -142,8 +147,16 @@ class CpGRange(pr.PyRanges):
         
         :returns Multisite grouped_tiles:  
         """
-        tiled_df = self.tile(window_size, strand=False).cluster(slack=-1, strand=False).as_df()
-        grouped_df = tiled_df.groupby(["Chromosome", "Start", "End", "Cluster"], observed=True).agg(agg_cols_funcs)
+        tiled_df = (self
+                    .tile(window_size, strand=False)
+                    .cluster(slack=-1, strand=False, count=True)
+                    .as_df()
+                    )
+        grouped_df = (tiled_df
+                      .groupby(["Chromosome", "Start", "End", "Cluster"], observed=True)
+                      .agg(agg_cols_funcs)
+                      .reset_index()
+                      )
         
         grouped_tiles = Multisite(grouped_df, raw_means=self.raw_means, percent_cols=self.__percent_cols)
            
@@ -163,17 +176,19 @@ class CpGRange(pr.PyRanges):
         """
         intersecting_on = str(intersect_with).lower()
         if intersecting_on == "genes":
-            intersect_df = self.__annotate_with_single(annotation_path).replace(-1, "Intergenic")
+            intersect_df = self.__annotate_with_single(annotation_path)
         elif intersecting_on in ["features", "cgi", "repeats"]:
             intersect_df = self.__annotate_with_multiple(annotation_path)
         else: 
             raise ValueError("Choose appropriate annotation type.")
 
-        intersect_df = intersect_df.rename(columns={"Start_CpG" : "Cluster"})
-        grouped_df = intersect_df.groupby(["Chromosome", "Start", "End", "feature_type"], 
-                                          observed=True).agg(agg_cols_funcs)
+        grouped_df = (intersect_df
+                      .groupby(["Chromosome", "Start", "End", "feature_type"], observed=True)
+                      .agg(agg_cols_funcs)
+                      .replace(replace_gaps)
+                      )
         
-        grouped_df = grouped_df.replace(replace_gaps)
+        grouped_df = grouped_df
 
         return  Multisite(grouped_df, 
                           raw_means=self.raw_means, 
