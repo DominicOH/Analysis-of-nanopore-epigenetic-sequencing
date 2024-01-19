@@ -1,10 +1,9 @@
 import pandas as pd
 import pyranges as pr
-import annotation_features
-from read_modbed import readModkit, readBismarkZeroCov
+from AnalysisTools import annotation_features
+from AnalysisTools.read_modbed import readModkit, readBismarkZeroCov
 import numpy as np
-import warnings
-from common import *
+import warningsfrom AnalysisTools.common import *
 
 def asPyRanges(df):
     """
@@ -113,9 +112,7 @@ class CpGRange(pr.PyRanges):
                     col : df[col].mean()
                 })
             except: 
-                pass
-        return raw_means
-
+                pass        return raw_means    
     def __annotate_with_multiple(self, annotation_dir_path):
         annotation_ref = annotation_features.featureRefPyRange(annotation_dir_path).unstrand()
 
@@ -138,41 +135,14 @@ class CpGRange(pr.PyRanges):
     
         return annotated_df
     
-    def __groupby_function(self, df_with_groups):
-
-        percent_cols = self.__percent_cols
-        print(f"Aggregating all of {percent_cols}")
-
-        if "feature_type" in df_with_groups.columns:
-            groups = ["feature_type", "Chromosome", "Start", "End"]
-        else: 
-            groups = ["Chromosome", "Start", "End"]    
-
-        if len(percent_cols) == 2:
-            grouped_df = df_with_groups.groupby(groups, observed=True).aggregate(
-                {percent_cols[0] : np.mean,
-                percent_cols[1] : np.mean,
-                "Cluster" : "count"}
-                ).reset_index().rename(columns={"Cluster" : "CpG_count"})
-        elif len(percent_cols) == 4:
-            grouped_df = df_with_groups.groupby(groups, observed=True).aggregate(
-                {percent_cols[0] : np.mean,
-                percent_cols[1] : np.mean,
-                percent_cols[2] : np.mean,
-                percent_cols[3] : np.mean,
-                "Cluster" : "count"}
-                ).reset_index().rename(columns={"Cluster" : "CpG_count"})
-        return grouped_df
-                 
-    def group_by_tile(self, window_size):
+    def group_by_tile(self, window_size, agg_cols_funcs):
         """
         Groups CpGs based according to `window_size` bp windows ("tiles"), using the average (mean) hydroxymethlyation of CpGs within those windows. 
         
         :returns Multisite grouped_tiles:  
         """
         tiled_df = self.tile(window_size, strand=False).cluster(slack=-1, strand=False).as_df()
-
-        grouped_df = self.__groupby_function(tiled_df)
+        grouped_df = tiled_df.groupby(["Chromosome", "Start", "End", "Cluster"], observed=True).agg(agg_cols_funcs)
         
         grouped_tiles = Multisite(grouped_df, raw_means=self.raw_means, percent_cols=self.__percent_cols)
            
@@ -180,7 +150,8 @@ class CpGRange(pr.PyRanges):
     
     def group_by_annotation(self, 
               intersect_with: str,
-              annotation_path: str
+              annotation_path: str,
+              agg_cols_funcs: dict
               ):
         """
         Groups CpGs based on intersecting annotations. Outputs a Pandas DataFrame.
@@ -197,8 +168,8 @@ class CpGRange(pr.PyRanges):
             raise ValueError("Choose appropriate annotation type.")
 
         intersect_df = intersect_df.rename(columns={"Start_CpG" : "Cluster"})
-
-        grouped_df = self.__groupby_function(intersect_df)
+        grouped_df = intersect_df.groupby(["Chromosome", "Start", "End", "feature_type"], 
+                                          observed=True).agg(agg_cols_funcs)
         
         if intersecting_on in ["genes", "features"]: 
             output_df = grouped_df.replace("-1", "Intergenic")
