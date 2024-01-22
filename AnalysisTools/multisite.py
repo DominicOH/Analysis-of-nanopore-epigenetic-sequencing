@@ -129,6 +129,7 @@ class CpGRange(pr.PyRanges):
     def group_by_tile(self, 
                       window_size: int, 
                       agg_cols_funcs: dict,
+                      min_cpgs: int = 1
                       ):
         """
         Groups CpGs based according to `window_size` bp windows ("tiles"), using the average (mean) hydroxymethlyation of CpGs within those windows. 
@@ -144,7 +145,8 @@ class CpGRange(pr.PyRanges):
                       .groupby(["Chromosome", "Start", "End", "Cluster"], observed=True)
                       .agg(agg_cols_funcs)
                       .reset_index()
-                      )
+                      .drop(columns=["Cluster"]))
+        grouped_df = grouped_df.loc[grouped_df["Count"].ge(min_cpgs)]
 
         grouped_tiles = Multisite(grouped_df, percent_cols=self.__percent_cols)
         return grouped_tiles
@@ -154,6 +156,7 @@ class CpGRange(pr.PyRanges):
               annotation_path: str,
               agg_cols_funcs: dict,
               replace_gaps: dict,
+              min_cpgs: int = 1
               ):
         """
         Groups CpGs based on intersecting annotations. Outputs a Pandas DataFrame.
@@ -174,6 +177,7 @@ class CpGRange(pr.PyRanges):
                       .agg(agg_cols_funcs)
                       .replace(replace_gaps)
                       )
+        grouped_df = grouped_df.loc[grouped_df["Count"].ge(min_cpgs)]
         return  Multisite(grouped_df, 
                           percent_cols=self.__percent_cols)
     
@@ -202,6 +206,7 @@ class Multisite:
                              inplace=False
                              ):
         
+        raise DeprecationWarning("Naively thought readcounts would aggregate. Removing soon.")
         df = self.df.copy()
         for count_col, readcount, name in zip(count_cols, readcount_cols, names):
             new_col = df.apply(lambda r: (r[count_col]/r[readcount])*100, axis=1)
@@ -210,7 +215,25 @@ class Multisite:
         if inplace: 
             self.df = df
 
-        return df
+        return Multisite(df)
+    
+    def joinMultisite(self, 
+                      other,
+                      suffixes: list):
+        df = self.df
+        other_df = other.df
+
+        if not "feature_type" in df.columns:
+            merge_cols = ["Chromosome", "Start", "End"]
+        else: 
+            merge_cols = ["Chromosome", "Start", "End", "feature_type"]
+
+        df = df.merge(other_df, 
+                      on=merge_cols, 
+                      how="inner", 
+                      suffixes=suffixes)
+        
+        return Multisite(df)
     
     def compareCols(self, cols: list, other, log=True, epsilon=1):
         """
@@ -232,7 +255,7 @@ class Multisite:
                 logratio_vals = df.apply(lambda row: np.log2(row[ratio_name]), axis=1)
                 df[logratio_name] = logratio_vals 
 
-        return df
+        return Multisite(df)
             
     def __calculate_ratio_to_mean(self, column: str, native=False):
         """
