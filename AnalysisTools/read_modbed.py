@@ -45,8 +45,8 @@ def filterDepth(df,
 
 def readModkit(
         path: str, 
-        min_depth: int = 10,
-        apply_max_depth: bool = True,
+        min_depth: int = 1,
+        apply_max_depth: bool = False,
         incl_raw_counts: bool = False
 ):
     """
@@ -98,7 +98,7 @@ def readModkit(
 def readBismarkZeroCov(
         path: str, 
         mod: str, 
-        min_depth: int = 10,
+        min_depth: int = 1,
         apply_max_depth: bool = False,
         incl_raw_counts: bool = False):
     
@@ -114,14 +114,16 @@ def readBismarkZeroCov(
 
     if mod == "5mC":
         meth_col = "percentMeth_5mC"
+        mod_count = "N_mC"
     elif mod == "5hmC":
         meth_col = "percentMeth_5hmC"
+        mod_count = "N_hmC"
     else:
         raise ValueError("Please enter a mod type: '5mC' or '5hmC'")
 
     df = pd.read_csv(path, sep="\t", names=[
-            "Chromosome", "Start", "End", meth_col, "N_mod", "N_unmod"]
-            ).assign(readCount = lambda row: row.N_mod + row.N_unmod)
+            "Chromosome", "Start", "End", meth_col, mod_count, "N_unmod"]
+            ).assign(readCount = lambda row: row[mod_count] + row["N_unmod"])
         
     if min_depth:
         df = filterDepth(df, min_depth, apply_max_depth)
