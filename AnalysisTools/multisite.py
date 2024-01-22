@@ -198,25 +198,7 @@ class Multisite:
     @df.setter
     def df(self, new_df):
         self._df = new_df
-    
-    def calculatePercentages(self, 
-                             count_cols: list, 
-                             readcount_cols: list, 
-                             names: list,
-                             inplace=False
-                             ):
         
-        raise DeprecationWarning("Naively thought readcounts would aggregate. Removing soon.")
-        df = self.df.copy()
-        for count_col, readcount, name in zip(count_cols, readcount_cols, names):
-            new_col = df.apply(lambda r: (r[count_col]/r[readcount])*100, axis=1)
-            df[name] = new_col
-
-        if inplace: 
-            self.df = df
-
-        return Multisite(df)
-    
     def joinMultisite(self, 
                       other,
                       suffixes: list):
