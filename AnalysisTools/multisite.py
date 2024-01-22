@@ -76,6 +76,8 @@ def annotationPivot(df):
 class CpGRange(pr.PyRanges):
     """
     Initial class for feature/gene level comparison. Inherits from PyRanges. 
+    
+    Works best when the counts of individual modifications are present. 
     """
     def __init__(self, df):
         # give minion and prom datasets the same name for downstream compatibility
@@ -170,8 +172,6 @@ class CpGRange(pr.PyRanges):
                       .agg(agg_cols_funcs)
                       .replace(replace_gaps)
                       )
-        
-        grouped_df = grouped_df
 
         return  Multisite(grouped_df, 
                           percent_cols=self.__percent_cols)
@@ -183,7 +183,7 @@ class Multisite:
     Note: Not currently built to accommodate CpG 5mC.
     """
     def __init__(self, df, percent_cols=None):
-        self.df = df
+        self._df = df
         self.__percent_cols = percent_cols
 
     @property
@@ -197,7 +197,7 @@ class Multisite:
         Returns new columns with the ratio (optional log ratio) of values to one another. 
         """
         df = self.df
-        if other is int:
+        if type(other) is int:
             other = [other for i in range(len(cols))]
 
         for col, comparison in zip(cols, other):
