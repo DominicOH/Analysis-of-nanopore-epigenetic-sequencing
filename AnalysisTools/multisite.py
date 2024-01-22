@@ -199,14 +199,15 @@ class Multisite:
                              count_cols: list, 
                              readcount_cols: list, 
                              names: list,
-                             update=True
+                             inplace=False
                              ):
-        df = self.df
+        
+        df = self.df.copy()
         for count_col, readcount, name in zip(count_cols, readcount_cols, names):
             new_col = df.apply(lambda r: (r[count_col]/r[readcount])*100, axis=1)
             df[name] = new_col
 
-        if update:
+        if inplace: 
             self.df = df
 
         return df
