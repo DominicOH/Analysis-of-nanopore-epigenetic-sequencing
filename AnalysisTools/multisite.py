@@ -126,7 +126,10 @@ class CpGRange(pr.PyRanges):
     
         return annotated_df
     
-    def group_by_tile(self, window_size, agg_cols_funcs):
+    def group_by_tile(self, 
+                      window_size: int, 
+                      agg_cols_funcs: dict,
+                      ):
         """
         Groups CpGs based according to `window_size` bp windows ("tiles"), using the average (mean) hydroxymethlyation of CpGs within those windows. 
         
@@ -142,16 +145,15 @@ class CpGRange(pr.PyRanges):
                       .agg(agg_cols_funcs)
                       .reset_index()
                       )
-        
+
         grouped_tiles = Multisite(grouped_df, percent_cols=self.__percent_cols)
-           
         return grouped_tiles
     
     def group_by_annotation(self, 
               intersect_with: str,
               annotation_path: str,
               agg_cols_funcs: dict,
-              replace_gaps: dict
+              replace_gaps: dict,
               ):
         """
         Groups CpGs based on intersecting annotations. Outputs a Pandas DataFrame.
@@ -172,7 +174,6 @@ class CpGRange(pr.PyRanges):
                       .agg(agg_cols_funcs)
                       .replace(replace_gaps)
                       )
-
         return  Multisite(grouped_df, 
                           percent_cols=self.__percent_cols)
     
@@ -189,6 +190,26 @@ class Multisite:
     @property
     def df(self):
         return self._df
+    
+    @df.setter
+    def df(self, new_df):
+        self._df = new_df
+    
+    def calculatePercentages(self, 
+                             count_cols: list, 
+                             readcount_cols: list, 
+                             names: list,
+                             update=True
+                             ):
+        df = self.df
+        for count_col, readcount, name in zip(count_cols, readcount_cols, names):
+            new_col = df.apply(lambda r: (r[count_col]/r[readcount])*100, axis=1)
+            df[name] = new_col
+
+        if update:
+            self.df = df
+
+        return df
     
     def compareCols(self, cols: list, other, log=True, epsilon=1):
         """
