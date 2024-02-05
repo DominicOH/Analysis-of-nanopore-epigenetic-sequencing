@@ -131,30 +131,42 @@ def readBismarkZeroCov(
     if incl_raw_counts:
         return df
     else: 
-        return df.drop(columns=["N_mod", "N_unmod"])
+        return df.drop(columns=["N_mC", "N_hmC", "N_unmod"], errors="ignore")
     
-def openReps(rep_dir, min_depth=10, modbase=None):
+def openReps(reps_path, modbase=None, insert_cols: dict=None, min_depth=1):
     """
     Opens a directory of modkit '.bedMethyl' files or bismark_methylation_extractor '.zero.cov' files into a pd.Dataframe. 
     """
-    rep_ls = []
-    for index, file in enumerate(subprocess.check_output(["ls", rep_dir]).split()): 
-        decoded_path = rep_dir + bytes.decode(file)
+    if type(reps_path) == str:
+        prep_iter = subprocess.check_output(["ls", reps_path]).split()
+        rep_iter = []
+        for file in prep_iter:
+            rep_iter.append(reps_path + bytes.decode(file))
+    else:
+        rep_iter = reps_path
 
-        if checkBisOrModkit(decoded_path) == "Bismark":
+    rep_ls = []
+    for index, file in enumerate(rep_iter): 
+        if checkBisOrModkit(file) == "Bismark":
             if not modbase:
                 raise ValueError("Bismark input requires modbase specification in args. ['5mC'|'5hmC']")
             
-            mod_df = readBismarkZeroCov(decoded_path, modbase, min_depth, False)
+            mod_df = readBismarkZeroCov(file, modbase, min_depth, False)
             mod_df = mod_df.assign(Replicate = f"Rep. {index + 1}")
             rep_ls.append(mod_df)
 
-        elif checkBisOrModkit(decoded_path) == "Modkit": 
-            mod_df = readModkit(decoded_path, min_depth, False)
+        elif checkBisOrModkit(file) == "Modkit": 
+            mod_df = readModkit(file, min_depth, False)
             mod_df = mod_df.assign(Replicate = f"Rep. {index + 1}")
             rep_ls.append(mod_df)
+    
+    df = pd.concat(rep_ls)
 
-    return pd.concat(rep_ls)
+    if insert_cols:
+        for col in insert_cols:
+            df[col] = insert_cols[col]
+
+    return df
 
 ##### Main function #####
 
