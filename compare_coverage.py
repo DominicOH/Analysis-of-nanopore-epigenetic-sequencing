@@ -9,49 +9,19 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 import seaborn as sns
-from AnalysisTools import read_modbed
 from AnalysisTools import annotation_features
+from AnalysisTools import common
 import numpy as np
 import pandas as pd
 import string
 import pyranges as pr
 import argparse
 
-def onlyAutosomal(df):
-    df = df.loc[df.loc[:, "Chromosome"].str.match("^(chr)\d+$")]
-    return df
-
-def fetch_data(dry_run: bool):
-    if not dry_run:
-        cbm2_path = "data/modbases/nanopore/cbm2/"
-        cbm3_path = "data/modbases/nanopore/cbm3/"
-
-        oxbs_path = "data/modbases/public/CRR008808_oxBS/masked/"
-        tab_path = "data/modbases/public/CRR008807_TAB/masked/"
-    else:
-        cbm2_path = "data/dryruns/cbm2/"
-        cbm3_path = "data/dryruns/cbm3/" 
-
-        oxbs_path = "data/dryruns/oxbs/"
-        tab_path = "data/dryruns/tab/"
-
-    cbm2_auto = onlyAutosomal(read_modbed.openReps(
-        cbm2_path, insert_cols={"Technique" : "Nanopore"}).loc[:, ["Chromosome", "Start", "End", "readCount", "Technique", "Replicate"]])
-    cbm3_auto = onlyAutosomal(read_modbed.openReps(
-        cbm3_path, insert_cols={"Technique" : "Nanopore"}).loc[:, ["Chromosome", "Start", "End", "readCount", "Technique", "Replicate"]])
-
-    tab_auto = onlyAutosomal(read_modbed.openReps(tab_path, 
-                               modbase="5hmC", 
-                               insert_cols={"Technique" : "TAB"}).loc[:, ["Chromosome", "Start", "End", "readCount", "Technique", "Replicate"]])
-    oxbs_auto = onlyAutosomal(read_modbed.openReps(oxbs_path, 
-                                modbase="5mC", 
-                                insert_cols={"Technique" : "oxBS"}).loc[:, ["Chromosome", "Start", "End", "readCount", "Technique", "Replicate"]])
-    return cbm2_auto, cbm3_auto, tab_auto, oxbs_auto
-
 def fig_main(dry_run):
-
-    cbm2_auto, cbm3_auto, tab_auto, oxbs_auto = fetch_data(dry_run)
-    all_techs = [cbm2_auto, cbm3_auto, tab_auto, oxbs_auto]
+    cbm2_auto, cbm3_auto, tab_auto, oxbs_auto = common.fetch_data_Parallel(dry_run,
+                                                                           select_cols=["Chromosome", "Start", "End", "readCount", "Replicate"])
+    all_techs = [df.assign(Technique = f"{tech}") for df, tech in zip([cbm2_auto, cbm3_auto, tab_auto, oxbs_auto], 
+                                                                     ["Nanopore", "Nanopore", "TAB", "oxBS"])]
 
     # calculate all covered CpG sites in all replicates
     union = len(pr.PyRanges(pd.concat(all_techs)).merge(slack=-1))
@@ -96,11 +66,6 @@ def fig_main(dry_run):
     ax2 = fig.add_subplot(gs[0, 1])
     ax3 = fig.add_subplot(gs[0, 2])
 
-    # TAB coverage histogram # 
-
-
-
-    
     # OxBS coverage histogram # 
 
     sns.histplot(oxbs_auto,
@@ -125,8 +90,6 @@ def fig_main(dry_run):
     
     ax2.set_title("TAB-seq")
     
-    # Nanopore coverage histogram # 
-
     sns.histplot(pd.concat([cbm2_auto, cbm3_auto]),
                 x="readCount", 
                 stat="percent",
