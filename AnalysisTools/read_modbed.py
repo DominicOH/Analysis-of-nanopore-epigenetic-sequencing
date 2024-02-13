@@ -12,6 +12,7 @@ import pandas as pd
 import argparse
 import subprocess
 from math import sqrt
+import concurrent.futures
 
 ##### Function definitions #####
 
@@ -23,6 +24,8 @@ def checkBisOrModkit(path):
             return "Modkit"
         elif line_len == 6:
             return "Bismark"
+        elif line_len == 7:
+            return "Bismark CpG report"
         else:
             raise ValueError("Format not recognised.")
 
@@ -97,7 +100,7 @@ def readModkit(
 
 def readBismarkZeroCov(
         path: str, 
-        mod: str, 
+        modbase: str, 
         min_depth: int = 1,
         apply_max_depth: bool = False,
         incl_raw_counts: bool = False):
@@ -112,10 +115,10 @@ def readBismarkZeroCov(
 
     """
 
-    if mod == "5mC":
+    if modbase == "5mC":
         meth_col = "percentMeth_5mC"
         mod_count = "N_mC"
-    elif mod == "5hmC":
+    elif modbase == "5hmC":
         meth_col = "percentMeth_5hmC"
         mod_count = "N_hmC"
     else:
@@ -133,7 +136,7 @@ def readBismarkZeroCov(
     else: 
         return df.drop(columns=["N_mC", "N_hmC", "N_unmod"], errors="ignore")
     
-def openReps(reps_path, modbase=None, insert_cols: dict=None, min_depth=1):
+def openReps(reps_path, select_cols=None, insert_cols=None, modbase=None, **kwargs):
     """
     Opens a directory of modkit '.bedMethyl' files or bismark_methylation_extractor '.zero.cov' files into a pd.Dataframe. 
     """
@@ -149,18 +152,59 @@ def openReps(reps_path, modbase=None, insert_cols: dict=None, min_depth=1):
     for index, file in enumerate(rep_iter): 
         if checkBisOrModkit(file) == "Bismark":
             if not modbase:
-                raise ValueError("Bismark input requires modbase specification in args. ['5mC'|'5hmC']")
+                raise ValueError("Bismark inputs requires modbase specification in args. ['5mC'|'5hmC']")
             
-            mod_df = readBismarkZeroCov(file, modbase, min_depth, False)
+            mod_df = readBismarkZeroCov(file, modbase, **kwargs)
             mod_df = mod_df.assign(Replicate = f"Rep. {index + 1}")
             rep_ls.append(mod_df)
 
         elif checkBisOrModkit(file) == "Modkit": 
-            mod_df = readModkit(file, min_depth, False)
+            mod_df = readModkit(file, **kwargs)
             mod_df = mod_df.assign(Replicate = f"Rep. {index + 1}")
             rep_ls.append(mod_df)
     
     df = pd.concat(rep_ls)
+
+    if select_cols:
+        df = df.loc[:, select_cols]
+
+    if insert_cols:
+        for col in insert_cols:
+            df[col] = insert_cols[col]
+
+    return df
+
+def openReps_Parallel(reps_path, select_cols=None, insert_cols=None, modbase=None, **kwargs):
+    """
+    Opens a directory of modkit '.bedMethyl' files or bismark_methylation_extractor '.zero.cov' files into a pd.Dataframe. 
+    """
+    if type(reps_path) == str:
+        prep_iter = subprocess.check_output(["ls", reps_path]).split()
+        rep_iter = []
+        for file in prep_iter:
+            rep_iter.append(reps_path + bytes.decode(file))
+    else:
+        rep_iter = reps_path
+        
+    def open_single_rep(file, **kwargs):
+        if checkBisOrModkit(file) == "Bismark":
+            if not modbase:
+                raise ValueError("Bismark input requires modbase specification in args. ['5mC'|'5hmC']")
+            
+            mod_df = readBismarkZeroCov(file, modbase, **kwargs)
+        elif checkBisOrModkit(file) == "Modkit": 
+            mod_df = readModkit(file, **kwargs)
+        
+        return mod_df
+
+    with concurrent.futures.ThreadPoolExecutor() as tpe:
+        futures = [tpe.submit(open_single_rep, file, **kwargs).result() for file in rep_iter]
+        future_dfs = [future.assign(Replicate = f"Rep. {index + 1}") for index, future in enumerate(futures)]
+    
+    df = pd.concat(future_dfs)
+
+    if select_cols:
+        df = df.loc[:, select_cols]
 
     if insert_cols:
         for col in insert_cols:
