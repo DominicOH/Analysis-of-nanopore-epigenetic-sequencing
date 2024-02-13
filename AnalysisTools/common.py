@@ -26,8 +26,8 @@ def fetch_data(dry_run: bool, **kwargs):
     cbm2_auto = onlyAutosomal(read_modbed.openReps(cbm2_path, **kwargs))
     cbm3_auto = onlyAutosomal(read_modbed.openReps(cbm3_path, **kwargs))
 
-    tab_auto = onlyAutosomal(read_modbed.openReps(oxbs_path, modbase="5mC", **kwargs))
-    oxbs_auto = onlyAutosomal(read_modbed.openReps(tab_path, modbase="5hmC", **kwargs))
+    oxbs_auto = onlyAutosomal(read_modbed.openReps(oxbs_path, modbase="5mC", **kwargs))
+    tab_auto = onlyAutosomal(read_modbed.openReps(tab_path, modbase="5hmC", **kwargs))
 
     return cbm2_auto, cbm3_auto, tab_auto, oxbs_auto
 
@@ -47,10 +47,10 @@ def fetch_data_Parallel(dry_run: bool, **kwargs):
 
     nano_paths = [cbm2_path, cbm3_path]
 
-    with futures.ProcessPoolExecutor() as ppe:
+    with futures.ThreadPoolExecutor(4) as ppe:
         all_futures = [ppe.submit(read_modbed.openReps_Parallel, path, **kwargs) for path in nano_paths]
-        all_futures.append(ppe.submit(read_modbed.openReps_Parallel, oxbs_path,  modbase="5mC", **kwargs))
         all_futures.append(ppe.submit(read_modbed.openReps_Parallel, tab_path, modbase="5hmC", **kwargs))
+        all_futures.append(ppe.submit(read_modbed.openReps_Parallel, oxbs_path,  modbase="5mC", **kwargs))
 
         future_dfs = [onlyAutosomal(future.result()) for future in all_futures]
 
