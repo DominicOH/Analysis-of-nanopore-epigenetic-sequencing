@@ -56,7 +56,7 @@ def fig_main(dry_run):
 
     del autosomal_dataframes
 
-    coverage_by_rep = coverage_by_rep.assign(Proportion_of_union = lambda r: r["Count"]/LEN_UNION)
+    coverage_by_rep = coverage_by_rep.assign(Proportion_of_union = lambda r: (r["Count"]/LEN_UNION)*100)
     coverage_by_rep = coverage_by_rep.replace(["Nanopore 1", "Nanopore 2"], ["Nanopore", "Nanopore"])
 
     ax4 = fig.add_subplot(gs[1, 0])
