@@ -50,7 +50,8 @@ def readModkit(
         path: str, 
         min_depth: int = 1,
         apply_max_depth: bool = False,
-        incl_raw_counts: bool = False
+        include_raw_counts: bool = False,
+        **kwargs
 ):
     """
     Reads the bedmMethyl output of Modkit pileup into a pd.DataFrame. 
@@ -65,11 +66,13 @@ def readModkit(
     colnames = ["Chromosome", "Start", "End", "modBase", "modScore", "Strand", "rem1", "rem2", "rem3", "readCount", "percentMeth", "N_mod", "N_canonical", "N_other", "N_delete", "N_fail", "N_diff", "N_nocall"]
     df_init = pd.read_csv(path, 
                           sep="\t", 
-                          names=colnames)
+                          names=colnames,
+                          **kwargs
+)
     
     df_filtered = filterDepth(df_init, min_depth, apply_max_depth)
 
-    if incl_raw_counts:
+    if include_raw_counts:
         pivot_cols =  ["readCount", "percentMeth", "N_mod", "N_canonical", "N_other"]
     else:
         pivot_cols = ["readCount", "percentMeth"]
@@ -103,7 +106,8 @@ def readBismarkZeroCov(
         modbase: str, 
         min_depth: int = 1,
         apply_max_depth: bool = False,
-        incl_raw_counts: bool = False):
+        include_raw_counts: bool = False,
+        **kwargs):
     
     """
     Reads the output file of Bismark methylation extractor. Requires the bed format output produced with the options: -p --bedGraph --zero_based --comprehensive
@@ -131,10 +135,21 @@ def readBismarkZeroCov(
     if min_depth:
         df = filterDepth(df, min_depth, apply_max_depth)
 
-    if incl_raw_counts:
+    if include_raw_counts:
         return df
     else: 
         return df.drop(columns=["N_mC", "N_hmC", "N_unmod"], errors="ignore")
+    
+def open_single_rep(file, modbase=None, **kwargs):
+    if checkBisOrModkit(file) == "Bismark":
+        if not modbase:
+            raise ValueError("Bismark input requires modbase specification in args. ['5mC'|'5hmC']")
+        
+        mod_df = readBismarkZeroCov(file, modbase, **kwargs)
+    elif checkBisOrModkit(file) == "Modkit": 
+        mod_df = readModkit(file, **kwargs)
+    
+    return mod_df
     
 def openReps(reps_path, select_cols=None, insert_cols=None, modbase=None, **kwargs):
     """
@@ -148,31 +163,18 @@ def openReps(reps_path, select_cols=None, insert_cols=None, modbase=None, **kwar
     else:
         rep_iter = reps_path
 
-    rep_ls = []
-    for index, file in enumerate(rep_iter): 
-        if checkBisOrModkit(file) == "Bismark":
-            if not modbase:
-                raise ValueError("Bismark inputs requires modbase specification in args. ['5mC'|'5hmC']")
-            
-            mod_df = readBismarkZeroCov(file, modbase, **kwargs)
-            mod_df = mod_df.assign(Replicate = f"Rep. {index + 1}")
-            rep_ls.append(mod_df)
-
-        elif checkBisOrModkit(file) == "Modkit": 
-            mod_df = readModkit(file, **kwargs)
-            mod_df = mod_df.assign(Replicate = f"Rep. {index + 1}")
-            rep_ls.append(mod_df)
-    
-    df = pd.concat(rep_ls)
+    rep_ls = [open_single_rep(file, modbase, **kwargs) for file in rep_iter]
+    rep_ls = [dataframe.assign(Replicate = f"Rep. {index + 1}") for index, dataframe in enumerate(rep_ls)]
+    all_reps_df = pd.concat(rep_ls)
 
     if select_cols:
-        df = df.loc[:, select_cols]
+        all_reps_df = all_reps_df.loc[:, select_cols]
 
     if insert_cols:
         for col in insert_cols:
-            df[col] = insert_cols[col]
+            all_reps_df[col] = insert_cols[col]
 
-    return df
+    return all_reps_df
 
 def openReps_Parallel(reps_path, select_cols=None, insert_cols=None, modbase=None, **kwargs):
     """
@@ -185,30 +187,19 @@ def openReps_Parallel(reps_path, select_cols=None, insert_cols=None, modbase=Non
             rep_iter.append(reps_path + bytes.decode(file))
     else:
         rep_iter = reps_path
-        
-    def open_single_rep(file, **kwargs):
-        if checkBisOrModkit(file) == "Bismark":
-            if not modbase:
-                raise ValueError("Bismark input requires modbase specification in args. ['5mC'|'5hmC']")
-            
-            mod_df = readBismarkZeroCov(file, modbase, **kwargs)
-        elif checkBisOrModkit(file) == "Modkit": 
-            mod_df = readModkit(file, **kwargs)
-        
-        return mod_df
 
     with concurrent.futures.ThreadPoolExecutor() as tpe:
-        futures = [tpe.submit(open_single_rep, file, **kwargs).result() for file in rep_iter]
+        futures = [tpe.submit(open_single_rep, file, modbase, **kwargs).result() for file in rep_iter]
         future_dfs = [future.assign(Replicate = f"Rep. {index + 1}") for index, future in enumerate(futures)]
     
     df = pd.concat(future_dfs)
 
-    if select_cols:
-        df = df.loc[:, select_cols]
-
     if insert_cols:
         for col in insert_cols:
             df[col] = insert_cols[col]
+
+    if select_cols:
+        df = df.loc[:, select_cols]
 
     return df
 

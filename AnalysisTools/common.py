@@ -31,7 +31,13 @@ def fetch_data(dry_run: bool, **kwargs):
 
     return cbm2_auto, cbm3_auto, tab_auto, oxbs_auto
 
-def fetch_data_Parallel(dry_run: bool, **kwargs):
+def fetch_data_Parallel(dry_run: bool, split_biorep=False, **kwargs):
+    """
+    Fetches modkit/bismark data. Order of return is: cbm2, cbm3, tab, oxbs. 
+
+    ::bool dry_run:: Whether to return data for internal testing.  
+    """
+
     if not dry_run:
         cbm2_path = "data/modbases/nanopore/cbm2/"
         cbm3_path = "data/modbases/nanopore/cbm3/"
@@ -45,13 +51,15 @@ def fetch_data_Parallel(dry_run: bool, **kwargs):
         oxbs_path = "data/dryruns/oxbs/"
         tab_path = "data/dryruns/tab/"
 
-    nano_paths = [cbm2_path, cbm3_path]
+    if split_biorep:
+        bio_reps = ["Nanopore 1", "Nanopore 2"]
+    else:
+        bio_reps = ["Nanopore", "Nanopore"]
 
     with futures.ThreadPoolExecutor(4) as ppe:
-        all_futures = [ppe.submit(read_modbed.openReps_Parallel, path, **kwargs) for path in nano_paths]
-        all_futures.append(ppe.submit(read_modbed.openReps_Parallel, tab_path, modbase="5hmC", **kwargs))
-        all_futures.append(ppe.submit(read_modbed.openReps_Parallel, oxbs_path,  modbase="5mC", **kwargs))
-
+        all_futures = [ppe.submit(read_modbed.openReps_Parallel, path, insert_cols={"Technique" : bio_rep}, **kwargs) for path, bio_rep in zip([cbm2_path, cbm3_path], bio_reps)]
+        all_futures.append(ppe.submit(read_modbed.openReps_Parallel, tab_path, insert_cols={"Technique" : "TAB"}, modbase="5hmC", **kwargs))
+        all_futures.append(ppe.submit(read_modbed.openReps_Parallel, oxbs_path, insert_cols={"Technique" : "oxBS"},  modbase="5mC", **kwargs))
         future_dfs = [onlyAutosomal(future.result()) for future in all_futures]
 
     return future_dfs
