@@ -11,131 +11,114 @@ from matplotlib.gridspec import GridSpec
 import seaborn as sns
 from AnalysisTools import annotation_features
 from AnalysisTools import common
+import concurrent.futures
 import numpy as np
 import pandas as pd
 import string
 import pyranges as pr
 import argparse
+import time
+
+def annotate(df):
+    feature_pr = annotation_features.featureRefPyRange("/mnt/data1/doh28/analyses/mouse_hydroxymethylome_analysis/feature_references/RefSeq_Select/")
+
+    annotated_df = pr.PyRanges(df).join(feature_pr, strandedness=False, suffix="_Feature", apply_strand_suffix=False).as_df()
+    annotated_df = annotated_df.assign(readCount_vs_avg = lambda df: np.log2(df["readCount"]/df["readCount"].mean()))
+
+    return annotated_df
+
+def make_histogram(df, ax, color, **kwargs):
+    return sns.histplot(df, x="readCount", ax=ax, color=color, **kwargs)  
 
 def fig_main(dry_run):
-    cbm2_auto, cbm3_auto, tab_auto, oxbs_auto = common.fetch_data_Parallel(dry_run,
-                                                                           select_cols=["Chromosome", "Start", "End", "readCount", "Replicate"])
-    all_techs = [df.assign(Technique = f"{tech}") for df, tech in zip([cbm2_auto, cbm3_auto, tab_auto, oxbs_auto], 
-                                                                     ["Nanopore", "Nanopore", "TAB", "oxBS"])]
-
-    # calculate all covered CpG sites in all replicates
-    union = len(pr.PyRanges(pd.concat(all_techs)).merge(slack=-1))
-
-    rep_ls = []
-    for tech in all_techs:
-        for replicate in tech["Replicate"].unique():
-            rep_df = len(tech.query(f"Replicate == '{replicate}'"))
-            stat_df = pd.DataFrame({"Technique" : [tech.Technique.values.all()], 
-                                    "Replicate" : [replicate], 
-                                    "N_positions" : [rep_df], 
-                                    "Proportion_of_Union" : [(rep_df/union)*100]})
-            rep_ls.append(stat_df)
-
-    feature_pr = annotation_features.featureRefPyRange("/mnt/data1/doh28/analyses/mouse_hydroxymethylome_analysis/feature_references/RefSeq_Select/")
-    
-    def annotate(df):
-        annotated_df = pr.PyRanges(df).join(feature_pr, strandedness=False, suffix="_Feature", apply_strand_suffix=False).as_df()
-        annotated_df = annotated_df.assign(readCount_vs_avg = lambda df: np.log2(df["readCount"]/df["readCount"].mean()))
-        return annotated_df
-
-    annotated_ls = [annotate(tech) for tech in all_techs]
-
-    feature_depth = pd.concat(annotated_ls).replace(
-        ["intergenic", "genes", "intron", "cds", "1kbPromoter"], 
-        ["Intergenic", "Whole gene", "Intron", "CDS", "1kb Promoter"]
-    )
-    feature_depth["feature_type"] = pd.Categorical(feature_depth["feature_type"], 
-                                                categories=["Intergenic", "Intron", "CDS", "1kb Promoter", "Whole gene"], 
-                                                ordered=True)
-    
-    # Fig # 
-
-    fig = plt.figure(figsize=(89/25.4, 60/25.4), dpi=600, layout="constrained")
-
     sns.set_style("ticks")
     mpl.rc('font', size=5)
 
+    fig = plt.figure(figsize=(89/25.4, 60/25.4), dpi=600, layout="constrained")
     gs = GridSpec(2, 3, fig)
+
+    cbm2, cbm3, tab, oxbs = common.fetch_data_Parallel(dry_run, 
+                                                       select_cols=["Chromosome",
+                                                                    "Start", "End", 
+                                                                    "readCount", 
+                                                                    "Replicate", 
+                                                                    "Technique"])
+    cbm3 = cbm3.replace(["Rep. 1", "Rep. 2"], ["Rep. 3", "Rep. 4"])
+    
+    with concurrent.futures.ThreadPoolExecutor(4) as tpe:
+        autosomal_dataframes = tpe.map(common.onlyAutosomal, [cbm2, cbm3, tab, oxbs])
+        autosomal_dataframes = pd.concat([df for df in autosomal_dataframes])
+        LEN_UNION = len(pr.PyRanges(autosomal_dataframes).merge(False, slack=-1)) # len of union of covered sites saved for later
+
+    # Unique coverage comparison # 
+
+    coverage_by_rep = autosomal_dataframes.loc[:, ("Replicate", "Technique")].value_counts(dropna=True).reset_index(name="Count")
+
+    del autosomal_dataframes
+
+    coverage_by_rep = coverage_by_rep.assign(Proportion_of_union = lambda r: r["Count"]/LEN_UNION)
+    coverage_by_rep = coverage_by_rep.replace(["Nanopore 1", "Nanopore 2"], ["Nanopore", "Nanopore"])
+
+    ax4 = fig.add_subplot(gs[1, 0])
+
+    sns.barplot(coverage_by_rep, 
+                x="Technique", y="Proportion_of_union", 
+                hue="Technique", palette=sns.color_palette("BuGn_r", 4)[1:], 
+                order=["oxBS", "TAB", "Nanopore"], 
+                errorbar=("sd", 1), err_kws={
+                    "linewidth" : 0.8, 
+                    "solid_capstyle" : "butt"
+                    },
+                capsize=0.5,
+                ax=ax4)
+    
+    ax4.set_ylabel("Percentage of all\ncovered sites")
+    ax4.set_xlabel(None)
+    ax4.tick_params("x", labelrotation=15)
+
+    # Coverage depth histograms # 
 
     ax1 = fig.add_subplot(gs[0, 0])
     ax2 = fig.add_subplot(gs[0, 1])
     ax3 = fig.add_subplot(gs[0, 2])
 
-    # OxBS coverage histogram # 
-
-    sns.histplot(oxbs_auto,
-                x="readCount", 
-                stat="percent",
-                binrange=(0, 32),
-                binwidth=2, 
-                color=sns.color_palette("BuGn", 4)[1],
-                multiple="dodge",
-                ax=ax1)
-    
+    with concurrent.futures.ThreadPoolExecutor(3) as hist_executor:
+        hist_futures = [hist_executor.submit(make_histogram, df, ax, color, stat="percent", multiple="dodge", binrange=(0, 32), binwidth=2) for df, ax, color in zip(
+            [oxbs, tab, pd.concat([cbm2, cbm3])],
+            [ax1, ax2, ax3],
+            [sns.color_palette("BuGn", 4)[1], sns.color_palette("BuGn", 4)[2], sns.color_palette("BuGn", 4)[3]])]
+        for future in hist_futures:
+            future.result() 
+  
     ax1.set_title("oxBS-seq")
-
-    sns.histplot(tab_auto,
-                x="readCount", 
-                stat="percent",
-                binrange=(0, 32),
-                binwidth=2, 
-                color=sns.color_palette("BuGn", 4)[2],
-                multiple="dodge",
-                ax=ax2)
-    
     ax2.set_title("TAB-seq")
-    
-    sns.histplot(pd.concat([cbm2_auto, cbm3_auto]),
-                x="readCount", 
-                stat="percent",
-                binrange=(0, 32),
-                binwidth=2, 
-                color=sns.color_palette("BuGn", 4)[3],
-                multiple="dodge",
-                ax=ax3)
-
     ax3.set_title("Nanopore")
 
-    # Formatting # 
-
     for index, ax in enumerate([ax1, ax2, ax3]):
-        #sns.move_legend(ax, "upper right")
-
         ax.set_title(string.ascii_lowercase[index], fontdict={"fontweight" : "bold"}, loc="left")
         ax.set_xlabel("Depth at CpG site")
         ax.set_ylabel("Percentage of sites")
 
-    # Percentage of all covered sites # 
-
-    ax4 = fig.add_subplot(gs[1, 0])
-
-    sns.barplot(pd.concat(rep_ls), 
-                x="Technique", y="Proportion_of_Union", 
-                hue="Technique",
-                order=["oxBS", "TAB", "Nanopore"],
-                palette=sns.color_palette("BuGn_r", 4)[1:],  
-                errorbar=("sd", 1), 
-                err_kws={"linewidth" : 0.8,
-                         "solid_capstyle" : "butt"},
-                capsize=0.5,
-                ax=ax4)
-
-    ax4.set_ylabel("Percentage of all\ncovered sites")
-    ax4.set_xlabel(None)
-    ax4.tick_params("x", labelrotation=15)
+    # Coverage depth by annotation # 
 
     ax5 = fig.add_subplot(gs[1, 1:])
 
-    sns.barplot(feature_depth, 
+    with concurrent.futures.ProcessPoolExecutor(4) as annotation_executor:
+        annotated_futures = annotation_executor.map(annotate, [cbm2, cbm3, tab, oxbs])
+        annotated_df = pd.concat([future for future in annotated_futures])
+
+    annotated_df = annotated_df.replace(
+        ["intergenic", "genes", "intron", "cds", "1kbPromoter"], 
+        ["Intergenic", "Whole gene", "Intron", "CDS", "1kb Promoter"])
+
+    annotated_df["feature_type"] = pd.Categorical(annotated_df["feature_type"], 
+                                                  categories=["Intergenic", "Intron", "CDS", "1kb Promoter", "Whole gene"], 
+                                                  ordered=True)
+
+    sns.barplot(annotated_df, 
                 x="feature_type", 
                 y="readCount_vs_avg", 
                 hue="Technique",
-                # order=["oxBS", "TAB", "Nanopore"],
                 palette=sns.color_palette("BuGn_r", 4)[1:], 
                 errorbar=("sd", 1),
                 err_kws={"linewidth" : 0.8,
@@ -175,4 +158,7 @@ if __name__=="__main__":
     else: 
         dryrun = False
 
+    start_t = round(time.perf_counter(), 3)
     fig_main(dryrun)    
+    end_t = round(time.perf_counter(), 3)
+    print(f"Elapsed time: {end_t - start_t}")
