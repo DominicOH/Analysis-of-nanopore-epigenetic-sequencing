@@ -10,9 +10,8 @@ Developed using mod_kit 0.1.13 and Bismark Version: v0.24.0.
 
 import pandas as pd
 import argparse
-import subprocess
 from math import sqrt
-import concurrent.futures
+from helpers import timer
 
 ##### Function definitions #####
 
@@ -30,7 +29,7 @@ def checkBisOrModkit(path):
             raise ValueError("Format not recognised.")
 
 def filterDepth(df, 
-                min_depth: int = 10, 
+                min_depth: int = 1, 
                 apply_max_depth: bool = False):
     """
     Filters the dataframe to rows meeting the user-supplied minimum coverage depth. 
@@ -39,7 +38,7 @@ def filterDepth(df,
     
     filtered_df = df.copy()
     average = filtered_df["readCount"].mean()
-    filtered_df = filtered_df.loc[filtered_df.loc[:, "readCount"] >= min_depth]
+    filtered_df = filtered_df.loc[filtered_df.loc[:, "readCount"].ge(int(min_depth))]
 
     if apply_max_depth:
         filtered_df = filtered_df.loc[filtered_df.loc[:, "readCount"] < (average + 3*sqrt(average))]
@@ -129,8 +128,7 @@ def readBismarkZeroCov(
         raise ValueError("Please enter a mod type: '5mC' or '5hmC'")
 
     df = pd.read_csv(path, sep="\t", names=[
-            "Chromosome", "Start", "End", meth_col, mod_count, "N_unmod"]
-            ).assign(readCount = lambda row: row[mod_count] + row["N_unmod"])
+            "Chromosome", "Start", "End", meth_col, mod_count, "N_unmod"], **kwargs).assign(readCount = lambda row: row[mod_count] + row["N_unmod"])
         
     if min_depth:
         df = filterDepth(df, min_depth, apply_max_depth)
@@ -140,107 +138,46 @@ def readBismarkZeroCov(
     else: 
         return df.drop(columns=["N_mC", "N_hmC", "N_unmod"], errors="ignore")
     
-def open_single_rep(file, modbase=None, **kwargs):
+def open_single_file(file, min_depth=1, modbase=None, quiet=True, **kwargs):
+    if not quiet:
+        print(f"Opening {file}")
     if checkBisOrModkit(file) == "Bismark":
         if not modbase:
             raise ValueError("Bismark input requires modbase specification in args. ['5mC'|'5hmC']")
         
-        mod_df = readBismarkZeroCov(file, modbase, **kwargs)
+        mod_df = readBismarkZeroCov(file, modbase, min_depth, **kwargs)
     elif checkBisOrModkit(file) == "Modkit": 
-        mod_df = readModkit(file, **kwargs)
+        mod_df = readModkit(file, min_depth, **kwargs)
     
     return mod_df
-    
-def openReps(reps_path, select_cols=None, insert_cols=None, modbase=None, **kwargs):
-    """
-    Opens a directory of modkit '.bedMethyl' files or bismark_methylation_extractor '.zero.cov' files into a pd.Dataframe. 
-    """
-    if type(reps_path) == str:
-        prep_iter = subprocess.check_output(["ls", reps_path]).split()
-        rep_iter = []
-        for file in prep_iter:
-            rep_iter.append(reps_path + bytes.decode(file))
-    else:
-        rep_iter = reps_path
 
-    rep_ls = [open_single_rep(file, modbase, **kwargs) for file in rep_iter]
-    rep_ls = [dataframe.assign(Replicate = f"Rep. {index + 1}") for index, dataframe in enumerate(rep_ls)]
-    all_reps_df = pd.concat(rep_ls)
-
-    if select_cols:
-        all_reps_df = all_reps_df.loc[:, select_cols]
-
-    if insert_cols:
-        for col in insert_cols:
-            all_reps_df[col] = insert_cols[col]
-
-    return all_reps_df
-
-def openReps_Parallel(reps_path, select_cols=None, insert_cols=None, modbase=None, **kwargs):
-    """
-    Opens a directory of modkit '.bedMethyl' files or bismark_methylation_extractor '.zero.cov' files into a pd.Dataframe. 
-    """
-    if type(reps_path) == str:
-        prep_iter = subprocess.check_output(["ls", reps_path]).split()
-        rep_iter = []
-        for file in prep_iter:
-            rep_iter.append(reps_path + bytes.decode(file))
-    else:
-        rep_iter = reps_path
-
-    with concurrent.futures.ThreadPoolExecutor() as tpe:
-        futures = [tpe.submit(open_single_rep, file, modbase, **kwargs).result() for file in rep_iter]
-        future_dfs = [future.assign(Replicate = f"Rep. {index + 1}") for index, future in enumerate(futures)]
-    
-    df = pd.concat(future_dfs)
-
-    if insert_cols:
-        for col in insert_cols:
-            df[col] = insert_cols[col]
-
-    if select_cols:
-        df = df.loc[:, select_cols]
-
-    return df
-
+@timer
+def read_modbed(path, outpath, min_depth=1, verbose=False):
+    if type(path) == list:
+        for path, outpath in zip(path, outpath):
+            print(f"Reading from {path}")
+            df = open_single_file(path, min_depth, verbose)
+            print(f"Success. Saving to {outpath}")
+            df.to_csv(f"{outpath}", sep="\t", header=True, index=False)
+        return
+    elif type(path) == str:
+        print(f"Reading from {path}")
+        df = open_single_file(path, min_depth, verbose)
+        print(f"Success. Saving to {outpath}")
+        return df.to_csv(f"{outpath}", sep="\t", header=True, index=False)
+        
 ##### Main function #####
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser(
                         prog = "read_modbed",
                         description = "Reads a bedfile containing modified base information, such as that produced by ONT's modkit or Bismark.")
-
-    parser.add_argument("-n ", "--nanopore_path", action="store", dest="nano_path", required=False) 
-    parser.add_argument("-b ", "--BS_path", action="store", dest="BS_path", required=False) 
-    parser.add_argument("-t ", "--TAB_path", action="store", dest="TAB_path", required=False) 
-    parser.add_argument("-o ", "--oxBS_path", action="store", dest="oxBS_path", required=False) 
-    parser.add_argument("-p ", "--out_prefix", action="store", dest="out_prefix", type=str, required=True) 
-    parser.add_argument("--min_depth", action="store", dest="min_depth", default=10, type=int, required=False) 
-    parser.add_argument("--max_depth", action="store", dest="max_depth", default=False, type=bool, required=False) 
+    parser.add_argument("filenames", action="store", nargs="+")
+    parser.add_argument("-o ", "--outpath", action="store", nargs="+", type=str, required=True) 
+    parser.add_argument("--min_depth", action="store", dest="min_depth", default=1, type=int) 
+    parser.add_argument("-v", "--verbose", action="store_true", default=False) 
 
     args = parser.parse_args()
 
-    if not args.nano_path and not args.TAB_path and not args.oxBS_path:
-        raise NameError("No valid file paths provided.")
-
-    if args.nano_path:
-        print("Nanopore data file found...")
-        cpg_df = readModkit(args.nano_path, args.min_depth, args.max_depth).assign(method = "Nanopore")
-        file_out_name = args.out_prefix + "_nanopore.tsv"
-        cpg_df.to_csv(file_out_name, sep="\t", index=False)
-        print(f"Processed file output as {file_out_name}")
-   
-    if args.TAB_path:
-        print("TAB data file found...")
-        cpg_df = readBismarkZeroCov(args.TAB_path, "5hmC", args.min_depth, args.max_depth).assign(method = "TAB-seq")
-        file_out_name = args.out_prefix + "_tab.tsv"
-        cpg_df.to_csv(file_out_name, sep="\t", index=False)
-        print(f"Processed file output as {file_out_name}")
-        
-    if args.oxBS_path:
-        print("oxBS data file found...")
-        cpg_df = readBismarkZeroCov(args.oxBS_path, "5mC", args.min_depth, args.max_depth).assign(method = "oxBS-seq")
-        file_out_name = args.out_prefix + "_oxbs.tsv"
-        cpg_df.to_csv(file_out_name, sep="\t", index=False)
-        print(f"Processed file output as {file_out_name}")
-
+    read_modbed(args.filenames, args.outpath, args.min_depth, args.verbose)
+    print("Done")
