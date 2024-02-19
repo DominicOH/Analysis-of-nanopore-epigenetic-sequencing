@@ -37,8 +37,7 @@ def fig_main(dry_run):
     fig = plt.figure(figsize=(89/25.4, 60/25.4), dpi=600, layout="constrained")
     gs = GridSpec(2, 3, fig)
 
-    cbm2, cbm3, tab, oxbs = common.fetch_data_Parallel(dry_run, 
-                                                       select_cols=["Chromosome",
+    cbm2, cbm3, tab, oxbs = common.fetch_data(dry_run, select_cols=["Chromosome",
                                                                     "Start", "End", 
                                                                     "readCount", 
                                                                     "Replicate", 
