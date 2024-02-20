@@ -70,7 +70,5 @@ def annotate(df, dir_path):
     feature_pr = fetch_feature_PyRange(dir_path)
 
     annotated_df = pr.PyRanges(df).join(feature_pr, strandedness=False, suffix="_Feature", apply_strand_suffix=False).as_df()
-    annotated_df = annotated_df.assign(readCount_vs_avg = lambda df: np.log2(df["readCount"]/df["readCount"].mean()))
-
     return annotated_df
         

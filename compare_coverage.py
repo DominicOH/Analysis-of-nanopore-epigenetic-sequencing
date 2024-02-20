@@ -59,6 +59,10 @@ def fetch_data(dry_run: bool, split_biorep=False, **kwargs):
 def make_histogram(df, ax, color, **kwargs):
     return sns.histplot(df, x="readCount", ax=ax, color=color, **kwargs)  
 
+def annotated_coverage(df, feature_dir_path):
+    annotated_df = annotate(df, feature_dir_path)
+    return annotated_df.assign(readCount_vs_avg = lambda df: np.log2(df["readCount"]/df["readCount"].mean()))
+
 @timer
 def fig_main(dry_run):
     sns.set_style("ticks")
@@ -132,9 +136,7 @@ def fig_main(dry_run):
 
     feature_dir_path = "/mnt/data1/doh28/analyses/mouse_hydroxymethylome_analysis/feature_references/RefSeq_Select/"
     with concurrent.futures.ProcessPoolExecutor(4) as annotation_executor:
-        annotated_futures = [annotation_executor.submit(annotate, df, feature_dir_path) for df in [cbm2, cbm3, tab, oxbs]]
-        # annotated_futures = annotation_executor.map(annotate, [cbm2, cbm3, tab, oxbs])
-        # annotated_df = pd.concat([future for future in annotated_futures])
+        annotated_futures = [annotation_executor.submit(annotated_coverage, df, feature_dir_path) for df in [cbm2, cbm3, tab, oxbs]]
         annotated_df = pd.concat([future.result() for future in annotated_futures])
 
     annotated_df = annotated_df.replace(
