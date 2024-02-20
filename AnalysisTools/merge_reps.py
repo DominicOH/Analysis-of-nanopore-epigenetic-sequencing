@@ -1,8 +1,7 @@
 import argparse
 import pandas as pd
-from AnalysisTools import read_modbed, common
-from AnalysisTools.common import timer
-import time
+from AnalysisTools import read_modbed, common 
+from AnalysisTools.helpers import timer
 
 def load_data(path, modbase=None, dry_run=False, min_depth=1):
     if dry_run:
