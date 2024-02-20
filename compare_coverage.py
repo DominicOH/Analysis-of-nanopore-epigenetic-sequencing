@@ -58,7 +58,7 @@ def fetch_data(dry_run: bool, split_biorep=False, **kwargs):
     return future_dfs
 
 def annotate(df):
-    feature_pr = annotation_features.featureRefPyRange("/mnt/data1/doh28/analyses/mouse_hydroxymethylome_analysis/feature_references/RefSeq_Select/")
+    feature_pr = annotation_features.fetch_feature_PyRange("/mnt/data1/doh28/analyses/mouse_hydroxymethylome_analysis/feature_references/RefSeq_Select/")
 
     annotated_df = pr.PyRanges(df).join(feature_pr, strandedness=False, suffix="_Feature", apply_strand_suffix=False).as_df()
     annotated_df = annotated_df.assign(readCount_vs_avg = lambda df: np.log2(df["readCount"]/df["readCount"].mean()))
