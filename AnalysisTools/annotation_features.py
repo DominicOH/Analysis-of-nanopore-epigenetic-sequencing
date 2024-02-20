@@ -1,6 +1,7 @@
 import subprocess
 import pandas as pd
 import pyranges as pr
+import concurrent.futures
 
 class Reference:
     """
@@ -15,30 +16,6 @@ class Reference:
     @property
     def path(self): # getter function for read-only path value
         return self._path
-    
-    def __check_num_columns(self):
-        """
-        Checks and returns the number of columns present in the TSV file.
-        """
-        first_line = subprocess.check_output(["head", "-n 1", f"{self.path}"]).decode("utf-8")
-        num_columns = len(first_line.split("\t"))
-
-        return num_columns
-    
-    def __get_column_names(self):
-        """
-        Uses the number of columns to predict column name labels. 
-        """
-        num_columns = self.__check_num_columns()
-        names = ["Chromosome", "Start", "End", "Name"]
-
-        if num_columns == 6:
-            names.extend(["Score", "Strand"])
-        elif num_columns == 8:
-            names.extend(["Score", "Strand", "ThickStart", "ThickEnd"])
-        elif num_columns == 12:
-            names.extend(["Score", "Strand", "ThickStart", "ThickEnd", "itemRgb", "blockCount", "blockSizes", "blockStarts"])
-        return names
     
     def __get_feature_type(self):
         """
@@ -60,30 +37,31 @@ class Reference:
             pr = self.__merge_overlaps()
             df = pr.as_df()
             
-            # Currently not working with names
-            # names = self.__get_column_names()
-            # df.columns = names
-            
             df["feature_type"] = self.__get_feature_type()
             self._df = df
             return df
         else: 
             return self._df
         
-def featureRefPyRange(dir_path: str):
+def fetch_feature_PyRange(dir_path: str, p_threads=1):
     """
     Takes a directory of BED4 or BED6 files containing lists of features and feature coordinates to be used for annotation purposes. 
     """
     gene_feature_list = subprocess.check_output(["ls", dir_path]).decode("utf-8").split("\n") 
     gene_feature_list.pop(-1) # removes the current directory dot node 
 
-    df_list = []
-    for file in gene_feature_list:
-        path = dir_path + file
+    def add_reference(filepath):
+        path = dir_path + filepath
         feature_tsv = Reference(path)
-        feature_df = feature_tsv.df
-        df_list.append(feature_df)
+        return feature_tsv.df
+    
+    if p_threads > 1:
+        with concurrent.futures.ThreadPoolExecutor(6) as tpe:
+            df_futures = tpe.map(add_reference, gene_feature_list)
+            feature_reference_df = pd.concat([df for df in df_futures]).drop(columns=["Score", "ThickStart", "ThickEnd"], errors="ignore")
+    else:
+        df_generator = map(add_reference, gene_feature_list)
+        feature_reference_df = pd.concat(df_generator).drop(columns=["Score", "ThickStart", "ThickEnd"], errors="ignore")
 
-    feature_reference_df = pd.concat(df_list).drop(columns=["Score", "ThickStart", "ThickEnd"], errors="ignore")
     return pr.PyRanges(feature_reference_df)
         
