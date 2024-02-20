@@ -2,6 +2,7 @@ import subprocess
 import pandas as pd
 import pyranges as pr
 import concurrent.futures
+import numpy as np
 
 class Reference:
     """
@@ -64,4 +65,12 @@ def fetch_feature_PyRange(dir_path: str, p_threads=1):
         feature_reference_df = pd.concat(df_generator).drop(columns=["Score", "ThickStart", "ThickEnd"], errors="ignore")
 
     return pr.PyRanges(feature_reference_df)
+
+def annotate(df, dir_path):
+    feature_pr = fetch_feature_PyRange(dir_path)
+
+    annotated_df = pr.PyRanges(df).join(feature_pr, strandedness=False, suffix="_Feature", apply_strand_suffix=False).as_df()
+    annotated_df = annotated_df.assign(readCount_vs_avg = lambda df: np.log2(df["readCount"]/df["readCount"].mean()))
+
+    return annotated_df
         

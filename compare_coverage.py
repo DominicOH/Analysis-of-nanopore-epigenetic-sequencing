@@ -9,10 +9,9 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 import seaborn as sns
-from AnalysisTools import read_modbed
-from AnalysisTools import annotation_features 
+from AnalysisTools import common, read_modbed
+from AnalysisTools.annotation_features import annotate
 from AnalysisTools.helpers import timer
-from AnalysisTools import common  
 import concurrent.futures
 import numpy as np
 import pandas as pd
@@ -56,14 +55,6 @@ def fetch_data(dry_run: bool, split_biorep=False, **kwargs):
         future_dfs = [onlyAutosomal(future.result()) for future in all_futures]
 
     return future_dfs
-
-def annotate(df):
-    feature_pr = annotation_features.fetch_feature_PyRange("/mnt/data1/doh28/analyses/mouse_hydroxymethylome_analysis/feature_references/RefSeq_Select/")
-
-    annotated_df = pr.PyRanges(df).join(feature_pr, strandedness=False, suffix="_Feature", apply_strand_suffix=False).as_df()
-    annotated_df = annotated_df.assign(readCount_vs_avg = lambda df: np.log2(df["readCount"]/df["readCount"].mean()))
-
-    return annotated_df
 
 def make_histogram(df, ax, color, **kwargs):
     return sns.histplot(df, x="readCount", ax=ax, color=color, **kwargs)  
@@ -139,9 +130,12 @@ def fig_main(dry_run):
 
     ax5 = fig.add_subplot(gs[1, 1:])
 
+    feature_dir_path = "/mnt/data1/doh28/analyses/mouse_hydroxymethylome_analysis/feature_references/RefSeq_Select/"
     with concurrent.futures.ProcessPoolExecutor(4) as annotation_executor:
-        annotated_futures = annotation_executor.map(annotate, [cbm2, cbm3, tab, oxbs])
-        annotated_df = pd.concat([future for future in annotated_futures])
+        annotated_futures = [annotation_executor.submit(annotate, df, feature_dir_path) for df in [cbm2, cbm3, tab, oxbs]]
+        # annotated_futures = annotation_executor.map(annotate, [cbm2, cbm3, tab, oxbs])
+        # annotated_df = pd.concat([future for future in annotated_futures])
+        annotated_df = pd.concat([future.result() for future in annotated_futures])
 
     annotated_df = annotated_df.replace(
         ["intergenic", "genes", "intron", "cds", "1kbPromoter"], 
