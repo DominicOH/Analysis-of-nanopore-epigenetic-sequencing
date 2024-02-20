@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import matplotlib as mpl
 from matplotlib.gridspec import GridSpec
-from ..AnalysisTools.helpers import timer
+from AnalysisTools.helpers import timer
 
 def read_table(path, usecols):
     default_usecols = ["Chromosome", "Start", "End"]
@@ -93,7 +93,7 @@ def merge_positions(dfs, cols):
         merged[f"percentMeth_{cols.split('_')[1]}"] = (merged[cols]/merged["readCount"])*100
         return merged.drop(columns=["readCount", cols])
 
-timer
+@timer
 def fig_main(dryrun=True):
   
     fig = plt.figure(figsize=(89/25.4, 120/25.4), dpi=600, layout="constrained")
@@ -221,18 +221,27 @@ def fig_main(dryrun=True):
 
     control_array = pd.concat([m_average, u_average], ignore_index=True)
 
-    def roc_plot(truth, pred):
-        return RocCurveDisplay.from_predictions(truth, pred, 
-                                                c=sns.color_palette("BuGn_r", 4)[0], lw=0.8,
-                                                label=f"5mC (Controls): AUC {round(roc_auc_score(control_array['Truth'], control_array['percentMeth_5mC']), 3)}",
-                                                ax=ax5)
-    
-    roc_plot(control_array["Truth"], control_array["percentMeth_5mC"])
-    roc_plot(nano_oxbs["Truth"], nano_oxbs["Nanopore mean"])
-    roc_plot(nano_tab["Truth"], nano_tab["Nanopore mean"])
+    RocCurveDisplay.from_predictions(control_array["Truth"], control_array["percentMeth_5mC"],
+                                    c=sns.color_palette("BuGn_r", 4)[0], lw=0.8,
+                                    label=f"5mC (Controls): AUC {round(roc_auc_score(control_array['Truth'], control_array['percentMeth_5mC']), 3)}",
+                                    ax=ax5)
+    del control_array
 
+    RocCurveDisplay.from_predictions(nano_oxbs["Truth"], nano_oxbs["Nanopore mean"],
+                                    c=sns.color_palette("BuGn_r", 4)[1], lw=0.8,
+                                    label=f"5mC (oxBS): AUC {round(roc_auc_score(nano_oxbs['Truth'], nano_oxbs['Nanopore mean']), 3)}",
+                                    ax=ax5)
+    del nano_oxbs
+
+    RocCurveDisplay.from_predictions(nano_tab["Truth"], nano_tab["Nanopore mean"],
+                                    c=sns.color_palette("BuGn_r", 4)[2], lw=0.8,
+                                    label=f"5hmC (TAB): AUC {round(roc_auc_score(nano_tab['Truth'], nano_tab['Nanopore mean']), 3)}",
+                                    ax=ax5)
+    
     ax5.set_aspect("equal")
-    sns.move_legend(ax5, "lower right", frameon=False)
+    sns.move_legend(ax5, "lower right", frameon=False, bbox_to_anchor=(1.15, 0))
+    ax5.get_legend().set_in_layout(False)
+
     return fig.savefig("plots/cpg_methylation_compare.png")
 
 ##### Main function #####
