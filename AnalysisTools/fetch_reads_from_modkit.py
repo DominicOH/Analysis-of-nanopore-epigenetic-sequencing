@@ -48,14 +48,22 @@ class ReadTable():
         self.df = df
         self._include_bed = include_bed
 
-    def set_include_bed(self, path):
-        self._include_bed = pr.read_bed(path)
-        return 
+    def set_include_bed(self, include):
+        if type(include) == str:
+            self._include_bed = pr.read_bed(include)
+        elif type(include) == pr.PyRanges:
+            self._include_bed = include
+        elif type(include) == pd.DataFrame:
+            try: 
+                include_pr = pr.PyRanges(include)
+                self._include_bed = include_pr
+            except:
+                raise ValueError(f"Could not coerce {include} to PyRanges.")
     
     @property
     def include_bed(self):
         return self._include_bed.as_df()
-
+        
     def select_gene(self, gene_name):
         assert self._include_bed is not None, "Need to attach a target region bedfile with '.set_include_bed()"
 
@@ -68,7 +76,7 @@ class ReadTable():
         annotated_df = annotated_df.query(f"Name == '{gene_name}'")
         new_read_table = annotated_df.loc[:, ("Chromosome", "Start", "End", "Strand", "read_id", "classification")]
         return GeneReadTable(new_read_table, gene_name)
-
+    
 class GeneReadTable(ReadTable):
     def __init__(self, df, gene_name, include_bed=None):
         super().__init__(df, include_bed)
