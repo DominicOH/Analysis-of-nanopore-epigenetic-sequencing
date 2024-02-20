@@ -133,14 +133,15 @@ def fetch_controls(usecols, dryrun=True):
     neg_controls = map(lambda path: read_table(path, usecols).rename(columns={"N_mC" : "N_5mC", "N_hmC" : "N_5hmC"}), [zymo_u1, zymo_u2])
 
     return pos_controls, neg_controls
+
 def merge_positions(dfs, cols, drop=True):
     merged = pd.concat(dfs).groupby(["Chromosome", "Start", "End"]).sum()
 
     if type(cols) == list:
         for col in cols:
             merged[f"percentMeth_{col.split('_')[1]}"] = (merged[col]/merged["readCount"])*100
-            if drop:
-                merged = merged.drop(columns=["readCount", *cols])
+        if drop:
+            merged = merged.drop(columns=["readCount", *cols])
         return merged
     else:
         merged[f"percentMeth_{cols.split('_')[1]}"] = (merged[cols]/merged["readCount"])*100
