@@ -9,15 +9,53 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 import seaborn as sns
-from AnalysisTools import annotation_features
-from AnalysisTools import common
+from AnalysisTools import read_modbed
+from AnalysisTools import annotation_features 
+from AnalysisTools.helpers import timer
+from AnalysisTools import common  
 import concurrent.futures
 import numpy as np
 import pandas as pd
 import string
 import pyranges as pr
 import argparse
-import time
+
+def fetch_data(dry_run: bool, split_biorep=False, **kwargs):
+    """
+    Fetches modkit/bismark data. Order of return is: cbm2, cbm3, tab, oxbs. 
+
+    ::bool dry_run:: Whether to return data for internal testing.  
+    """
+    def onlyAutosomal(df):
+        df = df.loc[df.loc[:, "Chromosome"].str.match("^(chr)\d+$")]
+        return df
+    
+    if dry_run:
+        cbm2_path = "data/dryruns/cbm2/"
+        cbm3_path = "data/dryruns/cbm3/" 
+
+        oxbs_path = "data/dryruns/oxbs/"
+        tab_path = "data/dryruns/tab/"
+
+    else:
+        cbm2_path = "data/modbases/nanopore/cbm2/"
+        cbm3_path = "data/modbases/nanopore/cbm3/"
+
+        oxbs_path = "data/modbases/public/CRR008808_oxBS/masked/"
+        tab_path = "data/modbases/public/CRR008807_TAB/masked/"
+
+    if split_biorep:
+        bio_reps = ["Nanopore 1", "Nanopore 2"]
+    else:
+        bio_reps = ["Nanopore", "Nanopore"]
+
+    with concurrent.futures.ThreadPoolExecutor(4) as ppe:
+        all_futures = [ppe.submit(common.openReps, path, insert_cols={"Technique" : bio_rep}, **kwargs) for path, bio_rep in zip([cbm2_path, cbm3_path], bio_reps)]
+        all_futures.append(ppe.submit(common.openReps, tab_path, insert_cols={"Technique" : "TAB"}, modbase="5hmC", **kwargs))
+        all_futures.append(ppe.submit(common.openReps, oxbs_path, insert_cols={"Technique" : "oxBS"},  modbase="5mC", **kwargs))
+        future_dfs = [onlyAutosomal(future.result()) for future in all_futures]
+
+    return future_dfs
 
 def annotate(df):
     feature_pr = annotation_features.featureRefPyRange("/mnt/data1/doh28/analyses/mouse_hydroxymethylome_analysis/feature_references/RefSeq_Select/")
@@ -30,6 +68,7 @@ def annotate(df):
 def make_histogram(df, ax, color, **kwargs):
     return sns.histplot(df, x="readCount", ax=ax, color=color, **kwargs)  
 
+@timer
 def fig_main(dry_run):
     sns.set_style("ticks")
     mpl.rc('font', size=5)
@@ -37,17 +76,15 @@ def fig_main(dry_run):
     fig = plt.figure(figsize=(89/25.4, 60/25.4), dpi=600, layout="constrained")
     gs = GridSpec(2, 3, fig)
 
-    cbm2, cbm3, tab, oxbs = common.fetch_data(dry_run, select_cols=["Chromosome",
+    cbm2, cbm3, tab, oxbs = fetch_data(dry_run, select_cols=["Chromosome",
                                                                     "Start", "End", 
                                                                     "readCount", 
                                                                     "Replicate", 
                                                                     "Technique"])
     cbm3 = cbm3.replace(["Rep. 1", "Rep. 2"], ["Rep. 3", "Rep. 4"])
     
-    with concurrent.futures.ThreadPoolExecutor(4) as tpe:
-        autosomal_dataframes = tpe.map(common.onlyAutosomal, [cbm2, cbm3, tab, oxbs])
-        autosomal_dataframes = pd.concat([df for df in autosomal_dataframes])
-        LEN_UNION = len(pr.PyRanges(autosomal_dataframes).merge(False, slack=-1)) # len of union of covered sites saved for later
+    autosomal_dataframes = pd.concat([cbm2, cbm3, tab, oxbs])
+    LEN_UNION = len(pr.PyRanges(autosomal_dataframes).merge(False, slack=-1)) # len of union of covered sites saved for later
 
     # Unique coverage comparison # 
 
@@ -136,7 +173,12 @@ def fig_main(dry_run):
         ax.set_title(string.ascii_lowercase[index+3], fontdict={"fontweight" : "bold"}, loc="left")
 
     sns.despine()
-    return fig.savefig("plots/compare_coverage.png")
+
+    if dryrun:
+        outpath = "plots/tests/compare_coverage.png"
+    else:
+        outpath = "plots/compare_coverage.png"
+    return fig.savefig(outpath)
 
 ##### main function ##### 
 
@@ -157,7 +199,4 @@ if __name__=="__main__":
     else: 
         dryrun = False
 
-    start_t = round(time.perf_counter(), 3)
-    fig_main(dryrun)    
-    end_t = round(time.perf_counter(), 3)
-    print(f"Elapsed time: {end_t - start_t}")
+    fig_main(dryrun)
