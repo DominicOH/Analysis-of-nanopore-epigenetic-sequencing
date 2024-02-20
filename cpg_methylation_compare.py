@@ -7,6 +7,7 @@ import seaborn as sns
 import matplotlib as mpl
 from matplotlib.gridspec import GridSpec
 from AnalysisTools.helpers import timer
+import string
 
 def read_table(path, usecols):
     default_usecols = ["Chromosome", "Start", "End"]
@@ -239,8 +240,11 @@ def fig_main(dryrun=True):
                                     ax=ax5)
     
     ax5.set_aspect("equal")
-    sns.move_legend(ax5, "lower right", frameon=False, bbox_to_anchor=(1.15, 0))
+    sns.move_legend(ax5, "lower right", frameon=False, bbox_to_anchor=(1.25, 0))
     ax5.get_legend().set_in_layout(False)
+
+    for index, ax in enumerate([ax1, ax2, ax3, ax4, ax5]):
+        ax.set_title(f"{string.ascii_lowercase[index]}", fontdict={"fontweight" : "bold"}, loc="left")
 
     return fig.savefig("plots/cpg_methylation_compare.png")
 
