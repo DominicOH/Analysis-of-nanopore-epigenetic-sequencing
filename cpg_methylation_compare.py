@@ -7,92 +7,8 @@ import seaborn as sns
 import matplotlib as mpl
 from matplotlib.gridspec import GridSpec
 from AnalysisTools.helpers import timer
+from AnalysisTools.common import *
 import string
-
-def read_table(path, usecols):
-    default_usecols = ["Chromosome", "Start", "End"]
-
-    if type(usecols) == list:
-        default_usecols.extend(usecols)
-    else: 
-        default_usecols.append(usecols)
-
-    df = pd.read_table(path, sep="\t", 
-                        usecols=default_usecols)
-    return df
-
-def fetch_nanopore(usecols, dryrun=True):
-    if dryrun:
-        cbm2_1_path = "data/dryruns/modbeds/CBM_2_rep1.masked.bed.modbed"
-        cbm2_2_path = "data/dryruns/modbeds/CBM_2_rep2.masked.bed.modbed"
-
-        cbm3_1_path = "data/dryruns/modbeds/CBM_3_rep2.masked.bed.modbed"
-        cbm3_2_path = "data/dryruns/modbeds/CBM_3_rep2.masked.bed.modbed"
-
-    else:
-
-        cbm2_1_path = "data/modbases/modbeds/CBM_2_rep1.modbed"
-        cbm2_2_path = "data/modbases/modbeds/CBM_2_rep2.modbed"
-
-        cbm3_1_path = "data/modbases/modbeds/CBM_3_rep1.modbed"
-        cbm3_2_path = "data/modbases/modbeds/CBM_3_rep2.modbed"
-    
-    return map(lambda path: read_table(path, usecols).rename(columns={"N_mC" : "N_5mC", "N_hmC" : "N_5hmC"}), [cbm2_1_path, cbm2_2_path, cbm3_1_path, cbm3_2_path])
-
-def fetch_oxbs(usecols, dryrun=True):    
-    if dryrun:
-        oxbs_1_path = "data/dryruns/modbeds/CRD018546.gz_val_1_bismark_bt2_pe.deduplicated_mapq10_sorted.bismark.cov.gz.cpg_only.bed.CpG_report.txt.bed.masked.modbed.head"
-        oxbs_2_path = "data/dryruns/modbeds/CRD018548.gz_val_1_bismark_bt2_pe.deduplicated_mapq10_sorted.bismark.cov.gz.cpg_only.bed.CpG_report.txt.bed.masked.modbed.head"
-
-    else:
-        oxbs_1_path = "data/modbases/modbeds/oxbs_rep1.modbed"
-        oxbs_2_path = "data/modbases/modbeds/oxbs_rep2.modbed"
-
-    return map(lambda path: read_table(path, usecols).rename(columns={"N_mod" : "N_5mC"}), [oxbs_1_path, oxbs_2_path])
-
-def fetch_tab(usecols, dryrun=True):
-    if dryrun:
-        tab_1_path = "data/dryruns/modbeds/CRD018526-8.merged.sorted.q10.bismark.cov.gz.cpg_only.bed.CpG_report.txt.bed.masked.modbed.head"
-        tab_2_path = "data/dryruns/modbeds/CRD018542.gz_val_1_bismark_bt2_pe.q10.bismark.cov.gz.cpg_only.bed.CpG_report.txt.bed.masked.modbed.head"
-        tab_3_path = "data/dryruns/modbeds/CRD018544.gz_val_1_bismark_bt2_pe.q10.bismark.cov.gz.cpg_only.bed.CpG_report.txt.bed.masked.modbed.head"
-
-    else:
-        tab_1_path = "data/modbases/modbeds/tab_rep1.modbed"
-        tab_2_path = "data/modbases/modbeds/tab_rep2.modbed"
-        tab_3_path = "data/dryruns/modbeds/tab_rep3.modbed"
-
-    return map(lambda path: read_table(path, usecols).rename(columns={"N_mod" : "N_5hmC"}), [tab_1_path, tab_2_path, tab_3_path])
-
-def fetch_controls(usecols, dryrun=True):
-    if dryrun:
-        zymo_m1 = "data/dryruns/modbeds/zymo_wga_methylated_rep1.masked.bed.modbed"
-        zymo_m2 = "data/dryruns/modbeds/zymo_wga_methylated_rep2.masked.bed.modbed"
-
-        zymo_u1 = "data/dryruns/modbeds/zymo_wga_unmodified_rep1.masked.bed.modbed"
-        zymo_u2 = "data/dryruns/modbeds/zymo_wga_unmodified_rep2.masked.bed.modbed"
-
-    else:
-        zymo_m1 = "data/modbases/modbeds/zymo_methylated_rep1.modbed"
-        zymo_m2 = "data/modbases/modbeds/zymo_methylated_rep2.modbed"
-
-        zymo_u1 = "zymo_unmodified_rep1.modbed"
-        zymo_u2 = "zymo_unmodified_rep2.modbed"
-
-    pos_controls = map(lambda path: read_table(path, usecols).rename(columns={"N_mC" : "N_5mC", "N_hmC" : "N_5hmC"}), [zymo_m1, zymo_m2])
-    neg_controls = map(lambda path: read_table(path, usecols).rename(columns={"N_mC" : "N_5mC", "N_hmC" : "N_5hmC"}), [zymo_u1, zymo_u2])
-
-    return pos_controls, neg_controls
-
-def merge_positions(dfs, cols):
-    merged = pd.concat(dfs).groupby(["Chromosome", "Start", "End"]).sum()
-
-    if type(cols) == list:
-        for col in cols:
-            merged[f"percentMeth_{col.split('_')[1]}"] = (merged[col]/merged["readCount"])*100
-        return merged.drop(columns=["readCount", *cols])
-    else:
-        merged[f"percentMeth_{cols.split('_')[1]}"] = (merged[cols]/merged["readCount"])*100
-        return merged.drop(columns=["readCount", cols])
 
 @timer
 def fig_main(dryrun=True):
@@ -246,7 +162,11 @@ def fig_main(dryrun=True):
     for index, ax in enumerate([ax1, ax2, ax3, ax4, ax5]):
         ax.set_title(f"{string.ascii_lowercase[index]}", fontdict={"fontweight" : "bold"}, loc="left")
 
-    return fig.savefig("plots/cpg_methylation_compare.png")
+    if dryrun:
+        outpath = "plots/tests/cpg_methylation_compare.png"
+    else:
+        outpath = "plots/cpg_methylation_compare.png"
+    return fig.savefig(outpath)
 
 ##### Main function #####
 
