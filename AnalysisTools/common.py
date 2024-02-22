@@ -74,60 +74,75 @@ def read_table(path, usecols):
 
 def fetch_nanopore(usecols, dryrun=True):
     if dryrun:
-        cbm2_1_path = "data/dryruns/modbeds/CBM_2_rep1.masked.bed.modbed"
-        cbm2_2_path = "data/dryruns/modbeds/CBM_2_rep2.masked.bed.modbed"
+        root_path = "data/dryruns/modbeds/"
 
-        cbm3_1_path = "data/dryruns/modbeds/CBM_3_rep2.masked.bed.modbed"
-        cbm3_2_path = "data/dryruns/modbeds/CBM_3_rep2.masked.bed.modbed"
+        cbm2_1_path = root_path + "CBM_2_rep1.masked.bed.modbed"
+        cbm2_2_path = root_path + "CBM_2_rep2.masked.bed.modbed"
+
+        cbm3_1_path = root_path + "CBM_3_rep2.masked.bed.modbed"
+        cbm3_2_path = root_path + "CBM_3_rep2.masked.bed.modbed"
 
     else:
+        root_path = "data/modbases/modbeds/"
 
-        cbm2_1_path = "data/modbases/modbeds/CBM_2_rep1.modbed"
-        cbm2_2_path = "data/modbases/modbeds/CBM_2_rep2.modbed"
+        cbm2_1_path = root_path + "CBM_2_rep1.modbed"
+        cbm2_2_path = root_path + "CBM_2_rep2.modbed"
 
-        cbm3_1_path = "data/modbases/modbeds/CBM_3_rep1.modbed"
-        cbm3_2_path = "data/modbases/modbeds/CBM_3_rep2.modbed"
+        cbm3_1_path = root_path + "CBM_3_rep1.modbed"
+        cbm3_2_path = root_path + "CBM_3_rep2.modbed"
     
     return map(lambda path: read_table(path, usecols).rename(columns={"N_mC" : "N_5mC", "N_hmC" : "N_5hmC"}), [cbm2_1_path, cbm2_2_path, cbm3_1_path, cbm3_2_path])
 
 def fetch_oxbs(usecols, dryrun=True):    
     if dryrun:
-        oxbs_1_path = "data/dryruns/modbeds/CRD018546.gz_val_1_bismark_bt2_pe.deduplicated_mapq10_sorted.bismark.cov.gz.cpg_only.bed.CpG_report.txt.bed.masked.modbed.head"
-        oxbs_2_path = "data/dryruns/modbeds/CRD018548.gz_val_1_bismark_bt2_pe.deduplicated_mapq10_sorted.bismark.cov.gz.cpg_only.bed.CpG_report.txt.bed.masked.modbed.head"
+        root_path = "data/dryruns/modbeds/"
+
+        oxbs_1_path = root_path + "CRD018546.gz_val_1_bismark_bt2_pe.deduplicated_mapq10_sorted.bismark.cov.gz.cpg_only.bed.CpG_report.txt.bed.masked.modbed.head"
+        oxbs_2_path = root_path + "CRD018548.gz_val_1_bismark_bt2_pe.deduplicated_mapq10_sorted.bismark.cov.gz.cpg_only.bed.CpG_report.txt.bed.masked.modbed.head"
 
     else:
-        oxbs_1_path = "data/modbases/modbeds/oxbs_rep1.modbed"
-        oxbs_2_path = "data/modbases/modbeds/oxbs_rep2.modbed"
+        root_path = "data/modbases/modbeds/"
+
+        oxbs_1_path = root_path + "CRD018546.gz_val_1_bismark_bt2_pe.deduplicated_mapq10_sorted.bismark.cov.gz.cpg_only.bed.CpG_report.txt.bed.masked.modbed"
+        oxbs_2_path = root_path + "CRD018548.gz_val_1_bismark_bt2_pe.deduplicated_mapq10_sorted.bismark.cov.gz.cpg_only.bed.CpG_report.txt.bed.masked.modbed"
 
     return map(lambda path: read_table(path, usecols).rename(columns={"N_mod" : "N_5mC"}), [oxbs_1_path, oxbs_2_path])
 
 def fetch_tab(usecols, dryrun=True):
     if dryrun:
-        tab_1_path = "data/dryruns/modbeds/CRD018526-8.merged.sorted.q10.bismark.cov.gz.cpg_only.bed.CpG_report.txt.bed.masked.modbed.head"
-        tab_2_path = "data/dryruns/modbeds/CRD018542.gz_val_1_bismark_bt2_pe.q10.bismark.cov.gz.cpg_only.bed.CpG_report.txt.bed.masked.modbed.head"
-        tab_3_path = "data/dryruns/modbeds/CRD018544.gz_val_1_bismark_bt2_pe.q10.bismark.cov.gz.cpg_only.bed.CpG_report.txt.bed.masked.modbed.head"
+        root_path = "data/dryruns/modbeds/"
+
+        tab_1_path = root_path + "CRD018526-8.merged.sorted.q10.bismark.cov.gz.cpg_only.bed.CpG_report.txt.bed.masked.modbed.head"
+        tab_2_path = root_path + "CRD018542.gz_val_1_bismark_bt2_pe.q10.bismark.cov.gz.cpg_only.bed.CpG_report.txt.bed.masked.modbed.head"
+        tab_3_path = root_path + "CRD018544.gz_val_1_bismark_bt2_pe.q10.bismark.cov.gz.cpg_only.bed.CpG_report.txt.bed.masked.modbed.head"
 
     else:
-        tab_1_path = "data/modbases/modbeds/tab_rep1.modbed"
-        tab_2_path = "data/modbases/modbeds/tab_rep2.modbed"
-        tab_3_path = "data/dryruns/modbeds/tab_rep3.modbed"
+        root_path = "data/modbases/modbeds/"
+
+        tab_1_path = root_path + "CRD018526-8.merged.sorted.q10.bismark.cov.gz.cpg_only.bed.CpG_report.txt.bed.masked.modbed"
+        tab_2_path = root_path + "CRD018542.gz_val_1_bismark_bt2_pe.q10.bismark.cov.gz.cpg_only.bed.CpG_report.txt.bed.masked.modbed"
+        tab_3_path = root_path + "CRD018544.gz_val_1_bismark_bt2_pe.q10.bismark.cov.gz.cpg_only.bed.CpG_report.txt.bed.masked.modbed"
 
     return map(lambda path: read_table(path, usecols).rename(columns={"N_mod" : "N_5hmC"}), [tab_1_path, tab_2_path, tab_3_path])
 
 def fetch_controls(usecols, dryrun=True):
     if dryrun:
-        zymo_m1 = "data/dryruns/modbeds/zymo_wga_methylated_rep1.masked.bed.modbed"
-        zymo_m2 = "data/dryruns/modbeds/zymo_wga_methylated_rep2.masked.bed.modbed"
+        root_path = "data/dryruns/modbeds/"
+        
+        zymo_m1 = root_path + "zymo_wga_methylated_rep1.masked.bed.modbed"
+        zymo_m2 = root_path + "zymo_wga_methylated_rep2.masked.bed.modbed"
 
-        zymo_u1 = "data/dryruns/modbeds/zymo_wga_unmodified_rep1.masked.bed.modbed"
-        zymo_u2 = "data/dryruns/modbeds/zymo_wga_unmodified_rep2.masked.bed.modbed"
+        zymo_u1 = root_path + "zymo_wga_unmodified_rep1.masked.bed.modbed"
+        zymo_u2 = root_path + "zymo_wga_unmodified_rep2.masked.bed.modbed"
 
     else:
-        zymo_m1 = "data/modbases/modbeds/zymo_methylated_rep1.modbed"
-        zymo_m2 = "data/modbases/modbeds/zymo_methylated_rep2.modbed"
+        root_path = "data/modbases/modbeds/"
+        
+        zymo_m1 = root_path + "zymo_methylated_rep1.modbed"
+        zymo_m2 = root_path + "zymo_methylated_rep2.modbed"
 
-        zymo_u1 = "zymo_unmodified_rep1.modbed"
-        zymo_u2 = "zymo_unmodified_rep2.modbed"
+        zymo_u1 = root_path + "zymo_unmodified_rep1.modbed"
+        zymo_u2 = root_path + "zymo_unmodified_rep2.modbed"
 
     pos_controls = map(lambda path: read_table(path, usecols).rename(columns={"N_mC" : "N_5mC", "N_hmC" : "N_5hmC"}), [zymo_m1, zymo_m2])
     neg_controls = map(lambda path: read_table(path, usecols).rename(columns={"N_mC" : "N_5mC", "N_hmC" : "N_5hmC"}), [zymo_u1, zymo_u2])
@@ -135,7 +150,7 @@ def fetch_controls(usecols, dryrun=True):
     return pos_controls, neg_controls
 
 def merge_positions(dfs, cols, drop=True):
-    merged = pd.concat(dfs).groupby(["Chromosome", "Start", "End"]).sum()
+    merged = pd.concat(dfs).groupby(["Chromosome", "Start", "End"]).sum(numeric_only=True)
 
     if type(cols) == list:
         for col in cols:
