@@ -9,8 +9,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 import seaborn as sns
-from AnalysisTools import common
-from AnalysisTools.annotation_features import annotate
+from AnalysisTools import common, annotation_features
 from AnalysisTools.helpers import timer
 import concurrent.futures
 import numpy as np
@@ -72,9 +71,9 @@ def fetch_data(dry_run: bool, split_biorep=False, **kwargs):
 def make_histogram(df, ax, color, **kwargs):
     return sns.histplot(df, x="readCount", ax=ax, color=color, **kwargs)  
 
-def annotated_coverage(df, feature_dir_path):
+def annotated_coverage(df, annotator):
     print("Annotating...")
-    df = annotate(df, feature_dir_path)
+    df = annotator.annotate(df)
     median = df["readCount"].median()
 
     df = df.assign(readCount_vs_avg = lambda df: round(((df["readCount"]-median)/median)*100, ))
@@ -164,7 +163,8 @@ def fig_main(dry_run):
     
     print("Annotating datasets by genomic context...")
     with concurrent.futures.ProcessPoolExecutor(4) as annotation_executor:
-        annotated_futures = [annotation_executor.submit(annotated_coverage, df, feature_dir_path) for df in [cbm2, cbm3, tab, oxbs]]
+        annotator = annotation_features.Annotator(feature_dir_path)
+        annotated_futures = [annotation_executor.submit(annotated_coverage, df, annotator) for df in [cbm2, cbm3, tab, oxbs]]
         annotated_df = pd.concat([future.result() for future in annotated_futures])
         print(f"Done. Joined {len(annotated_df)} rows.")
 

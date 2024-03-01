@@ -28,13 +28,13 @@ def enrichment_wrap(annotated_df, mean):
     grouped_df = group_feature(annotated_df)
     return assign_enrichment(grouped_df, mean)
 
-def annotate_main(df_list, feature_dir_path):
+def annotate_main(df_list, annotator):
     
     global means
     means = [df["percentMeth_5hmC"].mean() for df in df_list]
 
     with concurrent.futures.ProcessPoolExecutor(len(df_list)) as executor:
-        annotation_futures = [executor.submit(annotation_features.annotate, df, feature_dir_path) for df in df_list]
+        annotation_futures = [executor.submit(annotator.annotate, df) for df in df_list]
         annotated_all = [future.result().drop(columns=["Strand"], errors="ignore") for future in annotation_futures]
         enrichment_dfs = [executor.submit(enrichment_wrap, df, mean).result() for df, mean in zip(annotated_all, means)]
         enrichment_dfs = [df.drop(columns=["readCount", "N_5hmC", "Method"]) for df in enrichment_dfs]
@@ -48,7 +48,7 @@ def plot_kde(df, ax):
     df = df.query("CpG_count_Nanopore > 4 & CpG_count_TAB > 4")
     
     return sns.kdeplot(df, x="enrichment_Nanopore", y="enrichment_TAB", 
-                       color=sns.color_palette("BuGn", 5)[4], fill=True,
+                       color=sns.color_palette("Greens", 5)[4], fill=True,
                        ax=ax)
 
 @timer
@@ -68,11 +68,11 @@ def fig_main(dryrun):
     all_dfs = [nanopore_df, tab_df]
     del nanopore_df, tab_df
 
-    feature_dir_path = "/mnt/data1/doh28/analyses/mouse_hydroxymethylome_analysis/feature_references/RefSeq_Select/"
-    cgi_dir_path = "/mnt/data1/doh28/analyses/mouse_hydroxymethylome_analysis/feature_references/cgi/"
+    feature_annotator = annotation_features.Annotator("/mnt/data1/doh28/analyses/mouse_hydroxymethylome_analysis/feature_references/feature_comparison/")
+    cgi_annotator = annotation_features.Annotator("/mnt/data1/doh28/analyses/mouse_hydroxymethylome_analysis/feature_references/cgi/")
 
-    features_enrichment = annotate_main(all_dfs, feature_dir_path)
-    cgi_enrichment = annotate_main(all_dfs, cgi_dir_path)
+    features_enrichment = annotate_main(all_dfs, feature_annotator)
+    cgi_enrichment = annotate_main(all_dfs, cgi_annotator)
 
     del all_dfs
 
