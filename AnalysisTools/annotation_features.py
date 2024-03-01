@@ -43,32 +43,32 @@ class Reference:
             return df
         else: 
             return self._df
-        
-def fetch_feature_PyRange(dir_path: str, p_threads=1):
-    """
-    Takes a directory of BED4 or BED6 files containing lists of features and feature coordinates to be used for annotation purposes. 
-    """
-    gene_feature_list = subprocess.check_output(["ls", dir_path]).decode("utf-8").split("\n") 
-    gene_feature_list.pop(-1) # removes the current directory dot node 
 
-    def add_reference(filepath):
-        path = dir_path + filepath
-        feature_tsv = Reference(path)
-        return feature_tsv.df
+class Annotator:
+    def __init__(self, dir_path: str):
+        self.dir_path = dir_path
     
-    if p_threads > 1:
-        with concurrent.futures.ThreadPoolExecutor(6) as tpe:
-            df_futures = tpe.map(add_reference, gene_feature_list)
-            feature_reference_df = pd.concat([df for df in df_futures]).drop(columns=["Score", "ThickStart", "ThickEnd"], errors="ignore")
-    else:
-        df_generator = map(add_reference, gene_feature_list)
-        feature_reference_df = pd.concat(df_generator).drop(columns=["Score", "ThickStart", "ThickEnd"], errors="ignore")
+    def __fetch_feature_PyRange(self):
+        """
+        Takes a directory of BED4 or BED6 files containing lists of features and feature coordinates to be used for annotation purposes. 
+        """
+        gene_feature_list = subprocess.check_output(["ls", self.dir_path]).decode("utf-8").split("\n") 
+        gene_feature_list.pop(-1) # removes the current directory dot node 
 
-    return pr.PyRanges(feature_reference_df)
+        def add_reference(filepath):
+            path = self.dir_path + filepath
+            feature_tsv = Reference(path)
+            return feature_tsv.df
+    
+        with concurrent.futures.ThreadPoolExecutor(len(gene_feature_list)) as tpe:
+                df_futures = tpe.map(add_reference, gene_feature_list)
+                feature_reference_df = pd.concat([df for df in df_futures]).drop(columns=["Score", "ThickStart", "ThickEnd"], errors="ignore")
 
-def annotate(df, dir_path):
-    feature_pr = fetch_feature_PyRange(dir_path)
+        return pr.PyRanges(feature_reference_df)
 
-    annotated_df = pr.PyRanges(df).join(feature_pr, strandedness=False, suffix="_Feature", apply_strand_suffix=False).as_df()
-    return annotated_df
+    def annotate(self, df):
+        feature_pr = self.__fetch_feature_PyRange()
+        annotated_df = pr.PyRanges(df).join(feature_pr, strandedness=False, suffix="_Feature", apply_strand_suffix=False).as_df()
+        
+        return annotated_df
         
