@@ -17,70 +17,63 @@ import pandas as pd
 import string
 import pyranges as pr
 import argparse
+import gc
 
-def fetch_data(dry_run: bool, split_biorep=False, **kwargs):
+def fetch_data(dry_run: bool):
     """
-    Fetches modkit/bismark data. Order of return is: cbm2, cbm3, tab, oxbs. 
+    Fetches modkit/bismark data. Order of return is: nanopore, tab, oxbs. 
 
     ::bool dry_run:: Whether to return data for internal testing.  
-    """
-    def onlyAutosomal(df):
-        df = df.loc[df.loc[:, "Chromosome"].str.match("^(chr)\d+$")]
-        return df
-    
+    """    
     if dry_run:
-        cbm2_path = "data/dryruns/cbm2/"
-        cbm3_path = "data/dryruns/cbm3/" 
-
-        oxbs_path = "data/dryruns/oxbs/"
-        tab_path = "data/dryruns/tab/"
+        nano_path = "data/dryruns/coverage_plot/nanopore/"
+        oxbs_path = "data/dryruns/coverage_plot/oxbs/"
+        tab_path = "data/dryruns/coverage_plot/tab/"
 
     else:
-        cbm2_path = "data/modbases/nanopore/cbm2/"
-        cbm3_path = "data/modbases/nanopore/cbm3/"
+        nano_path = "data/modbases/coverage_figure_beds/nanopore/"
+        oxbs_path = "data/modbases/coverage_figure_beds/oxbs/"
+        tab_path = "data/modbases/coverage_figure_beds/tab/"
 
-        oxbs_path = "data/modbases/public/CRR008808_oxBS/masked/"
-        tab_path = "data/modbases/public/CRR008807_TAB/masked/"
+    with concurrent.futures.ThreadPoolExecutor(3) as load_executor:
+        nanopore, oxbs, tab = load_executor.map(lambda path: common.fetch_modbeds(path, ["readCount"]), [nano_path, oxbs_path, tab_path])
 
-    if split_biorep:
-        bio_reps = ["Nanopore 1", "Nanopore 2"]
-    else:
-        bio_reps = ["Nanopore", "Nanopore"]
+    nanopore = pd.concat([df.assign(Technique = "Nanopore", Replicate = f"Rep. {i}") for i, df in enumerate(nanopore)], copy=False)
+    oxbs = pd.concat([df.assign(Technique = "oxBS", Replicate = f"Rep. {i}") for i, df in enumerate(oxbs)], copy=False)
+    tab = pd.concat([df.assign(Technique = "TAB", Replicate = f"Rep. {i}") for i, df in enumerate(tab)], copy=False)
+    
+    return nanopore, oxbs, tab
 
-    with concurrent.futures.ThreadPoolExecutor(4) as ppe:
-        all_futures = [ppe.submit(common.openReps, path, 
-                                  insert_cols={"Technique" : bio_rep},
-                                  quiet=False, 
-                                  **kwargs) for path, bio_rep in zip([cbm2_path, cbm3_path], bio_reps)]
-        all_futures.append(ppe.submit(common.openReps, 
-                                      tab_path, 
-                                      insert_cols={"Technique" : "TAB"}, 
-                                      modbase="5hmC",
-                                      quiet=False, 
-                                      **kwargs))
-        all_futures.append(ppe.submit(common.openReps, 
-                                      oxbs_path, 
-                                      insert_cols={"Technique" : "oxBS"},  
-                                      modbase="5mC",
-                                      quiet=False, 
-                                      **kwargs))
-        future_dfs = [onlyAutosomal(future.result()) for future in all_futures]
-
-    return future_dfs
+def onlyAutosomal(df):
+    df = df.loc[df.loc[:, "Chromosome"].str.match("^(chr)\d+$")]
+    return df
 
 def make_histogram(df, ax, color, **kwargs):
     return sns.histplot(df, x="readCount", ax=ax, color=color, **kwargs)  
 
-def annotated_coverage(df, annotator):
-    print("Annotating...")
-    df = annotator.annotate(df)
+def depth_to_median(df):
     median = df["readCount"].median()
+    df = df.eval("readCount_vs_avg = ((readCount - @median)/@median)*100", local_dict={"median" : median})
+    df["readCount_vs_avg"] = df["readCount_vs_avg"].astype(np.int16)
+    return df
 
-    df = df.assign(readCount_vs_avg = lambda df: round(((df["readCount"]-median)/median)*100, ))
-    df["readCount_vs_avg"] = pd.to_numeric(df["readCount_vs_avg"], downcast="integer")
+def prepare_boxplot(df):
+    df = (df.replace(["intergenic", "genes", "intron", "cds", "1kbPromoter"], 
+                   ["Intergenic", "Genic", "Intron", "CDS", "Promoter"])
+            .drop(columns=["Chromosome", "Start", "End", "Replicate", "Start_Feature", "End_Feature", "readCount", "Strand"], 
+                errors="ignore"))
     
-    print(f"Annotated {len(df)} rows.")
-    return df.drop(columns=["Chromosome", "Start", "End", "Start_Feature", "End_Feature", "Strand", "readCount"])
+    return df
+
+def annotated_boxplot(df):
+    feature_dir_path = "/mnt/data1/doh28/analyses/mouse_hydroxymethylome_analysis/feature_references/coverage_comparison_features/"
+    annotator = annotation_features.Annotator(feature_dir_path)
+
+    df = depth_to_median(df)
+    df = annotator.annotate(df)
+
+    df = prepare_boxplot(df)
+    return df
 
 @timer
 def fig_main(dry_run):
@@ -90,33 +83,27 @@ def fig_main(dry_run):
     fig = plt.figure(figsize=(89/25.4, 60/25.4), dpi=600, layout="constrained")
     gs = GridSpec(2, 3, fig)
 
-    cbm2, cbm3, tab, oxbs = fetch_data(dry_run, select_cols=["Chromosome",
-                                                                    "Start", "End", 
-                                                                    "readCount", 
-                                                                    "Replicate", 
-                                                                    "Technique"])
-    cbm3 = cbm3.replace(["Rep. 1", "Rep. 2"], ["Rep. 3", "Rep. 4"])
-    print("Completed reading data.")
-    
-    autosomal_dataframes = pd.concat([cbm2, cbm3, tab, oxbs])
+    print("Loading datasets...")
+    nanopore, oxbs, tab = fetch_data(dry_run)
+        
+    print("Counting number of CpG sites")
+    autosomal_dataframes = pd.concat([nanopore, tab, oxbs], copy=False)
     LEN_UNION = len(pr.PyRanges(autosomal_dataframes).merge(False, slack=-1)) # len of union of covered sites saved for later
 
     # Unique coverage comparison # 
 
     coverage_by_rep = autosomal_dataframes.loc[:, ("Replicate", "Technique")].value_counts(dropna=True).reset_index(name="Count")
-
     del autosomal_dataframes
 
     coverage_by_rep = coverage_by_rep.assign(Proportion_of_union = lambda r: (r["Count"]/LEN_UNION)*100)
-    coverage_by_rep = coverage_by_rep.replace(["Nanopore 1", "Nanopore 2"], ["Nanopore", "Nanopore"])
-
     ax4 = fig.add_subplot(gs[1, 0])
 
     print("Making barplot of coverage breadth by replicate...")
     sns.barplot(coverage_by_rep, 
                 x="Technique", y="Proportion_of_union", 
-                hue="Technique", palette=sns.color_palette("Greens_r", 4)[1:], 
+                hue="Technique", palette=sns.color_palette("Greens", 4)[1:],
                 order=["oxBS", "TAB", "Nanopore"], 
+                hue_order=["oxBS", "TAB", "Nanopore"], 
                 errorbar=("sd", 1), err_kws={
                     "linewidth" : 0.8, 
                     "solid_capstyle" : "butt"
@@ -136,16 +123,18 @@ def fig_main(dry_run):
     ax3 = fig.add_subplot(gs[0, 2])
 
     print("Making histograms of coverage depth by replicate...")
-    with concurrent.futures.ThreadPoolExecutor(3) as hist_executor:
+    with concurrent.futures.ThreadPoolExecutor(4) as hist_executor:
         hist_futures = [hist_executor.submit(make_histogram, df, ax, color, stat="percent", multiple="dodge", binrange=(0, 32), binwidth=2) for df, ax, color in zip(
-            [oxbs, tab, pd.concat([cbm2, cbm3])],
+            [oxbs, tab, nanopore],
             [ax1, ax2, ax3],
             [sns.color_palette("Greens", 4)[1], sns.color_palette("Greens", 4)[2], sns.color_palette("Greens", 4)[3]])]
                 
         for future in hist_futures:
             future.result()
+    
+    del hist_futures
     print("Done...")
-          
+        
     ax1.set_title("oxBS-seq")
     ax2.set_title("TAB-seq")
     ax3.set_title("Nanopore")
@@ -157,41 +146,38 @@ def fig_main(dry_run):
 
     # Coverage depth by annotation # 
 
+    gc.collect()
+
     ax5 = fig.add_subplot(gs[1, 1:])
 
-    feature_dir_path = "/mnt/data1/doh28/analyses/mouse_hydroxymethylome_analysis/feature_references/coverage_comparison_features/"
+    print("Preparing annotated boxplot data...")
+    # with concurrent.futures.ThreadPoolExecutor(3) as annotation_executor:
+    annotated_boxplot_futures = map(annotated_boxplot, [nanopore, tab, oxbs])
+    print("Done. Joining...")
+        
+    boxplot_df = pd.concat([df for df in annotated_boxplot_futures], copy=False).reset_index(drop=True)
+    del nanopore, tab, oxbs, annotated_boxplot_futures
     
-    print("Annotating datasets by genomic context...")
-    with concurrent.futures.ProcessPoolExecutor(4) as annotation_executor:
-        annotator = annotation_features.Annotator(feature_dir_path)
-        annotated_futures = [annotation_executor.submit(annotated_coverage, df, annotator) for df in [cbm2, cbm3, tab, oxbs]]
-        annotated_df = pd.concat([future.result() for future in annotated_futures])
-        print(f"Done. Joined {len(annotated_df)} rows.")
-
-    annotated_df = annotated_df.replace(
-        ["intergenic", "genes", "intron", "cds", "1kbPromoter"], 
-        ["Intergenic", "Genic", "Intron", "CDS", "Promoter"])
-
-    annotated_df["feature_type"] = pd.Categorical(annotated_df["feature_type"], 
-                                                  categories=["Intergenic", "Genic", "Intron", "CDS", "Promoter", "CGI"], 
-                                                  ordered=True)
+    gc.collect()    
+    print(f"Done. Joined {len(boxplot_df)} rows.")
     
     print("Making boxplot of coverage by context...")
 
     ax5.axhline(0, ls="--", c="k", lw=0.8, label="Median")
-
-    sns.boxplot(annotated_df, 
+    sns.boxplot(boxplot_df, 
                 x="feature_type", 
                 y="readCount_vs_avg", 
                 hue="Technique",
+                hue_order=["oxBS", "TAB", "Nanopore"],
+                order=["Intergenic", "Genic", "Intron", "CDS", "Promoter", "CGI"],
                 gap=0.2,
                 showfliers=False,
-                palette=sns.color_palette("Greens_r", 4)[1:], 
+                palette=sns.color_palette("Greens", 4)[1:], 
                 linewidth=0.8,
                 ax=ax5)
     
-    print("Done...")
-    ax5.set_ylabel("Difference to\nmedian depth (%)")
+    print("Done.")
+    ax5.set_ylabel("Difference to median (%)")
     ax5.yaxis.set_ticks(np.arange(-100, 400, 100))
 
     ax5.set_xlabel(None)
