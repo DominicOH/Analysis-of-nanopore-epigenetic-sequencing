@@ -66,9 +66,13 @@ class Annotator:
 
         return pr.PyRanges(feature_reference_df)
 
-    def annotate(self, df):
+    def annotate(self, obj, **join_kwargs):
         feature_pr = self.__fetch_feature_PyRange()
-        annotated_df = pr.PyRanges(df).join(feature_pr, strandedness=False, suffix="_Feature", apply_strand_suffix=False).as_df()
+
+        if type(obj) == pd.DataFrame:
+            obj = pr.PyRanges(obj)
         
-        return annotated_df
+        return obj.join(feature_pr, strandedness=False, suffix="_Feature", apply_strand_suffix=False, **join_kwargs).as_df()
         
+if __name__ == "__main__":
+    ...
