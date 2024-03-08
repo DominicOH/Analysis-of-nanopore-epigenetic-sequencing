@@ -29,7 +29,7 @@ def load_controls(dry_run: bool, **kwargs):
         all_dfs = [future.result() for future in all_futures]
 
     return all_dfs
-    
+
 def openReps(reps_path, select_cols=None, insert_cols=None, modbase=None, min_depth=1, quiet=True, **kwargs):
     """
     Opens a directory of modkit '.bedMethyl' files or bismark_methylation_extractor '.zero.cov' files into a pd.Dataframe. 
@@ -45,8 +45,8 @@ def openReps(reps_path, select_cols=None, insert_cols=None, modbase=None, min_de
     else:
         raise ValueError("Supplied path must be a dir or list of files.")
 
-    with concurrent.futures.ThreadPoolExecutor() as tpe:
-        futures = [tpe.submit(read_modbed.open_single_file, file, min_depth, modbase, **kwargs).result() for file in rep_iter]
+    with concurrent.futures.ThreadPoolExecutor(4) as tpe:
+        futures = [tpe.submit(read_modbed.open_single_file, file, min_depth, modbase, quiet=quiet, **kwargs).result() for file in rep_iter]
         future_dfs = [future.assign(Replicate = f"Rep. {index + 1}") for index, future in enumerate(futures)]
     
     df = pd.concat(future_dfs)
@@ -60,39 +60,29 @@ def openReps(reps_path, select_cols=None, insert_cols=None, modbase=None, min_de
 
     return df
 
-def read_table(path, usecols):
+def read_table(path, usecols: list=None):
     default_usecols = ["Chromosome", "Start", "End"]
 
-    if type(usecols) == list:
-        default_usecols.extend(usecols)
-    else: 
-        default_usecols.append(usecols)
+    if usecols:
+        if type(usecols) == list:
+            default_usecols.extend(usecols)
+        else: 
+            default_usecols.append(usecols)
 
     df = pd.read_table(path, sep="\t", 
-                        usecols=default_usecols)
+                       usecols=default_usecols)
     return df
 
-def fetch_nanopore(usecols, dryrun=True):
-    if dryrun:
-        root_path = "data/dryruns/modbeds/"
+def fetch_modbeds(dirpath, usecols=None):
+    path_ls = subprocess.check_output(["ls", dirpath]).decode("utf-8").split("\n")
+    path_ls.pop(-1)
 
-        cbm2_1_path = root_path + "CBM_2_rep1.masked.bed.modbed"
-        cbm2_2_path = root_path + "CBM_2_rep2.masked.bed.modbed"
-
-        cbm3_1_path = root_path + "CBM_3_rep2.masked.bed.modbed"
-        cbm3_2_path = root_path + "CBM_3_rep2.masked.bed.modbed"
-
-    else:
-        root_path = "data/modbases/modbeds/"
-
-        cbm2_1_path = root_path + "CBM_2_rep1.modbed"
-        cbm2_2_path = root_path + "CBM_2_rep2.modbed"
-
-        cbm3_1_path = root_path + "CBM_3_rep1.modbed"
-        cbm3_2_path = root_path + "CBM_3_rep2.modbed"
+    with concurrent.futures.ThreadPoolExecutor(len(path_ls)) as read_executor:
+        tables = read_executor.map(lambda path: read_table(dirpath + path, usecols), path_ls)
+        tables = [table.rename(columns={"N_mC" : "N_5mC", "N_hmC" : "N_5hmC"}) for table in tables]
     
-    return map(lambda path: read_table(path, usecols).rename(columns={"N_mC" : "N_5mC", "N_hmC" : "N_5hmC"}), [cbm2_1_path, cbm2_2_path, cbm3_1_path, cbm3_2_path])
-
+    return tables
+    
 def fetch_oxbs(usecols, dryrun=True):    
     if dryrun:
         root_path = "data/dryruns/modbeds/"
@@ -149,17 +139,23 @@ def fetch_controls(usecols, dryrun=True):
 
     return pos_controls, neg_controls
 
-def merge_positions(dfs, cols, drop=True):
-    merged = pd.concat(dfs).groupby(["Chromosome", "Start", "End"]).sum(numeric_only=True)
-
+def calculate_percentages(df, cols):
     if type(cols) == list:
         for col in cols:
-            merged[f"percentMeth_{col.split('_')[1]}"] = (merged[col]/merged["readCount"])*100
-        if drop:
-            merged = merged.drop(columns=["readCount", *cols])
-        return merged
+            df.eval(f"percentMeth_{col.split('_')[1]} = ({col}/readCount)*100", inplace=True)
     else:
-        merged[f"percentMeth_{cols.split('_')[1]}"] = (merged[cols]/merged["readCount"])*100
-        if drop:
-            merged = merged.drop(columns=["readCount", cols])
-        return merged
+        df.eval(f"percentMeth_{cols.split('_')[1]} = ({cols}/readCount)*100", inplace=True)
+
+    return df
+
+def merge_positions(dfs, calculate_percentage=False, cols=None, drop=None):
+    merged = pd.concat(dfs).groupby(["Chromosome", "Start", "End"]).sum(numeric_only=True)
+
+    # Replace with two functions/methods that do this
+    if calculate_percentage:
+        merged = calculate_percentages(merged, cols)
+
+    if drop:
+        merged = merged.drop(columns=drop)
+
+    return merged
