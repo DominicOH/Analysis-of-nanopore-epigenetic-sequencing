@@ -1,6 +1,7 @@
 import argparse
 import pandas as pd
 import numpy as np
+import gc
 from sklearn.metrics import RocCurveDisplay, roc_auc_score
 from imblearn.over_sampling import ADASYN
 from collections import Counter
@@ -34,7 +35,6 @@ def prep_dev_plot(df, bs_method, mod):
     return df
 @timer
 def fig_main(dryrun=True):
-  
     fig = plt.figure(figsize=(89/25.4, 120/25.4), dpi=600, layout="constrained")
 
     sns.set_style("ticks")
@@ -53,6 +53,8 @@ def fig_main(dryrun=True):
     # Initial data collection # 
     # Should aim to generalise fetch_modbed data loading
 
+    print("Loading data")
+    
     if dryrun:
         nano_path = "data/dryruns/modbeds/nanopore/"
         tab_path = "data/dryruns/modbeds/tab/"
@@ -71,22 +73,26 @@ def fig_main(dryrun=True):
         modbeds = [future.result() for future in modbeds_future]
 
     cols = [["N_5mC", "N_5hmC"], ["N_mod"], ["N_mod"]]
+    gc.collect()
     
-    with concurrent.futures.ThreadPoolExecutor(3) as merge_executor:
+    with concurrent.futures.ProcessPoolExecutor(3) as merge_executor:
         merge_futures = [merge_executor.submit(merge_positions, modbed, True, col) for modbed, col in zip(modbeds, cols)]
         nanopore_average, tab_average, ox_average = [future.result().assign(Method = method) for future, method in zip(merge_futures, 
                                                                                                                        ["Nanopore mean", "TAB mean", "oxBS mean"])]
     ox_average = ox_average.rename(columns={"percentMeth_mod" : "percentMeth_5mC"})
     tab_average = tab_average.rename(columns={"percentMeth_mod" : "percentMeth_5hmC"})        
 
+    print("Loaded data")
     # General distribution comparison # 
 
     dfs = [nanopore_average, ox_average, nanopore_average, tab_average]
     xs = ["percentMeth_5mC", "percentMeth_5mC", "percentMeth_5hmC", "percentMeth_5hmC"]
-    cs = [sns.color_palette("Greens_r", 4)[0], sns.color_palette("Greens_r", 4)[0], sns.color_palette("Greens_r", 4)[1], sns.color_palette("Greens_r", 4)[1]]
+    cs = [sns.color_palette("Greens_r", 4)[0], sns.color_palette("Greens_r", 4)[0], sns.color_palette("Blues_r", 4)[0], sns.color_palette("Blues_r", 4)[0]]
     lss = [":", "-", ":", "-"]
     labels = ["Nanopore 5mC", "oxBS 5mC", "Nanopore 5hmC", "TAB 5hmC"]
     axs = [ax1, ax1, ax2, ax2]
+
+    print("Plotting ECDFs")
 
     with concurrent.futures.ThreadPoolExecutor(4) as ecdf_executor:
         ecdf_futures = [ecdf_executor.submit(sns.ecdfplot, data=df, x=x, c=c, lw=.8, ls=ls, label=label, ax=ax) 
@@ -96,11 +102,13 @@ def fig_main(dryrun=True):
     ax1.set_xlabel("Site 5mC (%)")
     ax2.set_xlabel("Site 5hmC (%)")
     
-    nano_oxbs = pd.concat([nanopore_average, ox_average], join="inner").pivot_table(values="percentMeth_5mC", index=["Chromosome", "Start", "End"], columns="Method").dropna()
+    nano_oxbs = pd.concat([nanopore_average, ox_average], join="inner", copy=False).pivot_table(values="percentMeth_5mC", index=["Chromosome", "Start", "End"], columns="Method").dropna()
     del ox_average
     
-    nano_tab = pd.concat([nanopore_average, tab_average], join="inner").pivot_table(values="percentMeth_5hmC", index=["Chromosome", "Start", "End"], columns="Method").dropna()
+    nano_tab = pd.concat([nanopore_average, tab_average], join="inner", copy=False).pivot_table(values="percentMeth_5hmC", index=["Chromosome", "Start", "End"], columns="Method").dropna()
     del tab_average, nanopore_average
+
+    gc.collect()
 
     # General distribution comparison # 
 
@@ -109,8 +117,13 @@ def fig_main(dryrun=True):
     u_average = merge_positions(neg_ctrl, True, "N_5mC")
 
     del pos_ctrl, neg_ctrl
+    gc.collect()
 
     m_average["Truth"], u_average["Truth"] = 1, 0
+    control_array = pd.concat([m_average, u_average], ignore_index=True, copy=False)
+
+    del m_average, u_average
+    gc.collect()
 
     for ax in [ax1, ax2]:
         ax.legend() 
@@ -122,15 +135,20 @@ def fig_main(dryrun=True):
 
     # KDE site comparison # 
 
-    def kdeplot(df, bis_col, ax):
+    def kdeplot(df, bis_col, c, ax):
         plot = sns.kdeplot(df, 
                         x=bis_col, y="Nanopore mean", 
-                        fill=True, color=sns.color_palette("Greens", 5)[4],
+                        fill=True, color=c,
                         ax=ax)
         return plot
 
+    print("Plotting KDEs")
     with concurrent.futures.ThreadPoolExecutor(2) as kde_executor:
-        kde_futures = [kde_executor.submit(kdeplot, df, col, ax) for df, col, ax in zip([nano_oxbs, nano_tab], ["oxBS mean", "TAB mean"], [ax3, ax4])]
+        kde_futures = [kde_executor.submit(kdeplot, df, col, c, ax) for df, col, c, ax in zip([nano_oxbs, nano_tab], 
+                                                                                              ["oxBS mean", "TAB mean"], 
+                                                                                              ["#74c476", "#6baed6"],
+                                                                                              [ax3, ax4]
+                                                                                              )]
         [future.result() for future in kde_futures]  
 
     ax3.set_xlabel("oxBS-seq site 5mC (%)")
@@ -151,57 +169,66 @@ def fig_main(dryrun=True):
         ax.set_xlim(0, 100)
         ax.set_ylim(0, 100)
 
+    gc.collect()
+    print("Plotting deviation")
     with concurrent.futures.ProcessPoolExecutor(2) as dev_plot_executor:
         dev_plot_futures = [dev_plot_executor.submit(prep_dev_plot, df, bs_method, mod) for df, bs_method, mod, in zip([nano_oxbs, nano_tab], 
                                                                                                                        ["oxBS", "TAB"], 
                                                                                                                        ["5mC", "5hmC"])]
         nano_oxbs, nano_tab = [future.result() for future in dev_plot_futures]
 
+    gc.collect()
     sns.histplot(pd.concat([nano_oxbs, nano_tab]),
                 x="diff", 
                 stat="proportion",
-                discrete=True,
-                binrange=(-50, 50),
+                binrange=(-50, 50), binwidth=2,
                 element="step", fill=False, 
                 lw=0.8,
-                hue="Mod", palette="Greens",
+                hue="Mod", palette="GnBu",
                 ax=ax5)
+    
+    ax5.set_ylim((0, 0.1))
+    ax5.set_xlim((-50, 50))
+    ax5.set_aspect(1000)
 
     ax5.set_xlabel("Bisulphite % - Nanopore %")
     sns.move_legend(ax5, "upper right", frameon=False, title=None)
 
     # site comparison ROC # 
 
-    control_array = pd.concat([m_average, u_average], ignore_index=True)
-
+    print("Plotting ROCs")
     RocCurveDisplay.from_predictions(control_array["Truth"], control_array["percentMeth_5mC"],
-                                    c=sns.color_palette("Greens", 4)[1], lw=0.8,
-                                    label=f"5mC (Control): AUC {round(roc_auc_score(control_array['Truth'], control_array['percentMeth_5mC']), 3)}",
+                                    c="#bae4bc", lw=0.8,
+                                    label=f"5mC (Control): {round(roc_auc_score(control_array['Truth'], control_array['percentMeth_5mC']), 3)}",
                                     ax=ax6)
     del control_array
+    gc.collect()
 
     dfs = [nano_oxbs, nano_tab]
     bs_methods = ["oxBS", "TAB"]
     label = ["5mC (oxBS)",  "5hmC (TAB)"]
-    kwargs = [{"c" : sns.color_palette("Greens", 4)[2], "lw" : 0.8}, 
-              {"c" : sns.color_palette("Greens", 4)[3], "lw" : 0.8}]
+    kwargs = [{"c" : "#7bccc4", "lw" : 0.8}, 
+              {"c" : "#2b8cbe", "lw" : 0.8}]
     
     with concurrent.futures.ThreadPoolExecutor(2) as roc_executor:
         roc_futures = [roc_executor.submit(adasyn_roc, df, bs, ax6, label, **kwargs) for df, bs, label, kwargs in zip(dfs, bs_methods,label, kwargs)]
         [future.result() for future in roc_futures]
     
     ax6.set_aspect("equal")
-    sns.move_legend(ax6, "lower right", frameon=False, bbox_to_anchor=(1.25, 0))
+    sns.move_legend(ax6, "lower left", frameon=False)
     ax6.get_legend().set_in_layout(False)
 
+    print("Done. Saving")
     for index, ax in enumerate(fig.axes):
         ax.set_title(f"{string.ascii_lowercase[index]}", fontdict={"fontweight" : "bold"}, loc="left")
 
     if dryrun:
-        outpath = "plots/tests/cpg_methylation_compare.png"
+        outpaths = ["plots/tests/cpg_methylation_compare.png"]
     else:
-        outpath = "plots/cpg_methylation_compare.png"
-    return fig.savefig(outpath)
+        outpaths = ["plots/cpg_methylation_compare.png"]
+        outpaths = ["plots/cpg_methylation_compare.svg"]
+
+    return [fig.savefig(path) for path in outpaths]
 
 ##### Main function #####
 
