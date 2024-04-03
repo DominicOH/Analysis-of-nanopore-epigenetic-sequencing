@@ -30,10 +30,7 @@ def read_duplex_modbed(path, test_run=True, replicate=None):
     return pattern_df
 
 def merge_pattern(df):
-        df = (df.eval("CM = `-,m,C` + `m,-,C`")
-                .eval("CH = `-,h,C` + `h,-,C`")
-                .eval("MH = `m,h,C` + `h,m,C`")
-                .rename(columns={"-,-,C" : "CC",
+        df = (df.rename(columns={"-,-,C" : "CC",
                                  "m,m,C" : "MM",
                                  "h,h,C" : "HH",
                                  "-,m,C" : "CM",
@@ -43,7 +40,7 @@ def merge_pattern(df):
                                  "m,h,C" : "MH",
                                  "h,m,C" : "HM"})
                 .eval("total_homometh = CC + MM + HH")
-                .eval("total_heterometh = CM + CH + MH")
+                .eval("total_heterometh = CM + MC + CH + HC + MH + HM")
                 .eval("readCount = total_homometh + total_heterometh"))
         return PatternFrame(df)
 
@@ -102,19 +99,24 @@ class PatternFrame:
         df = self.pattern_df.loc[:, ("Chromosome", "Start", "End", "MC", "CM", "HC", "CH", "HM", "MH")]
         df = df.loc[df.eval("(MC + CM + HC + CH + HM + MH) > 0")]
 
+        # need strand information from CTCF sites
         ctcf_intersect = (pr.PyRanges(df).join(ctcf_bs, apply_strand_suffix=True, suffix="_CTCF").as_df())           
 
         # remove those with no hemimethlyation
         ctcf_intersect = ctcf_intersect.melt(id_vars=["Chromosome", "Start", "End", "Strand_CTCF"], var_name="Pattern", value_vars=["MC", "CM", "HC", "CH", "HM", "MH"], value_name="Count")
         ctcf_intersect = ctcf_intersect.loc[ctcf_intersect.eval("Count > 0")]
 
-        summary = ctcf_intersect.groupby(["Strand_CTCF", "Pattern"])["Count"].sum().reset_index()
-        summary["Percentage"] = summary["Count"].div(summary["Count"].sum()).multiply(100)
+        summary = (ctcf_intersect.groupby(["Strand_CTCF", "Pattern"])["Count"]
+                   .sum()
+                   .reset_index())
+        summary["Percentage"] = (summary["Count"]
+                                 .div(summary["Count"].sum())
+                                 .multiply(100))
 
         summary = pd.concat([summary, (summary.Pattern.str.split("", n=2, expand=True)
                                 .drop(columns=0)
                                 .rename(columns={1 : "pos_mod", 
-                                                    2 : "neg_mod"}))], axis=1)
+                                                 2 : "neg_mod"}))], axis=1)
 
         summary["motif_mod"] = summary["pos_mod"].where(cond=(summary["Strand_CTCF"] == "+"), other=summary["neg_mod"])
         summary["opp_mod"] = summary["neg_mod"].where(cond=(summary["Strand_CTCF"] == "+"), other=summary["pos_mod"])
@@ -136,20 +138,13 @@ class Summary:
         summary = self.df
         return summary.groupby("opp_mod").sum(numeric_only=True)
     
-    def quantify_ctcf_hemi_mods(self):
-        summary = self.df
-        summary = summary.melt(value_vars=["motif_mod", "opp_mod"], id_vars="Count")
+    def quantify_mod_combinations(self):
+        summary = self.df.drop(columns="Percentage")
+        motif_total = summary.groupby("motif_mod")["Count"].transform("sum")
 
-        summary = summary.groupby("value").sum(True).reset_index()
-        summary["Percentage"] = (summary["Count"].div(summary["Count"].sum()).multiply(100))
+        summary["Percentage"] = (summary["Count"]/motif_total)*100
 
         return  summary
-    
-    def ctcf_mod_patterns(self):
-        summary = self.df
-        summaries = [summary.groupby("motif_mod").get_group(mod) for mod in summary["motif_mod"].unique()]
-
-        return summaries
 
 # Loading JASPAR CTCF binding sites 
 ctcf_bs = pr.PyRanges(pd.read_table("feature_references/CTCF_mm39_jaspar_sorted.tsv")
@@ -242,8 +237,8 @@ def main(test_run=True, min_depth=1, merge_sites=False):
         opp_only = [summary.quantify_opp_strand() for summary in hetero_mods_at_ctcf]
         opp_mod_summary = pd.concat([summary.assign(Replicate = i) for i, summary in enumerate(opp_only)])
         
-        hetero_mod_summary = pd.concat([summary.quantify_ctcf_hemi_mods()
-                                        .assign(Replicate = i) for i, summary in enumerate(hetero_mods_at_ctcf)])
+        hetero_mod_summary = pd.concat([summary.quantify_mod_combinations()
+                                        .assign(Replicate = i) for i, summary in enumerate(hetero_mods_at_ctcf)]).reset_index()
 
     sns.barplot(motif_mod_summary, 
         x="motif_mod", y="Percentage",
@@ -253,7 +248,6 @@ def main(test_run=True, min_depth=1, merge_sites=False):
         ax=ax5)
     
     ax5.set_ylabel("Percent of motif-\nstrand basecalls")
-    print(hetero_mod_summary.groupby("value")["Percentage"].mean())
 
     sns.barplot(opp_mod_summary, 
         x="opp_mod", y="Percentage",
@@ -262,9 +256,9 @@ def main(test_run=True, min_depth=1, merge_sites=False):
         errorbar=("sd", 1), err_kws={"lw" : .8}, capsize=.5,
         ax=ax6)
     ax6.set_ylabel("Percent of opposite-\nstrand basecalls")
+    ax6.sharey(ax5)
 
-    all_mods = pd.concat([df.df.assign(Replicate = i) for i, df in enumerate(hetero_mods_at_ctcf)])
-    c, m, h = [all_mods.groupby("motif_mod").get_group(mod) for mod in ["C", "5mC", "5hmC"]]
+    c, m, h = [hetero_mod_summary.groupby("motif_mod").get_group(mod) for mod in ["C", "5mC", "5hmC"]]
 
     sns.barplot(c, 
             x="motif_mod", y="Percentage",
@@ -276,7 +270,7 @@ def main(test_run=True, min_depth=1, merge_sites=False):
             ax=ax7)
     
     ax7.sharey(ax8)
-    ax7.set_ylabel("Percent of motif-\nstrand basecalls")
+    ax7.set_ylabel("Percent modification\nopposite motif")
 
     sns.barplot(m, 
                 x="motif_mod", y="Percentage",
