@@ -12,7 +12,7 @@ import numpy as np
 
 def read_duplex_modbed(path, test_run=True, replicate=None):
     if test_run:
-        nrows = 100000
+        nrows = 1000000
     else:
         nrows=None
     
@@ -82,8 +82,8 @@ class PatternFrame:
         pie_data = pd.DataFrame({
             "Pattern" : ["Homo-C", "Homo-5mC", "Homo-5hmC", "Hemi-", "Hetero-"],
             "Count" : [df["CC"].sum(), df["MM"].sum(), df["HH"].sum(), 
-                       df["MC"].sum() + df["CM"].sum() + df["HC"].sum() + df["CH"].sum(),
-                       df["MH"].sum() + df["HM"].sum()]
+                    df["MC"].sum() + df["CM"].sum() + df["HC"].sum() + df["CH"].sum(),
+                    df["MH"].sum() + df["HM"].sum()]
             })
 
         return pie_data
@@ -109,10 +109,21 @@ class PatternFrame:
                                "Percentage" : [(hetero/len(df))*100, ((len(df) - hetero)/len(df))*100]})
         
         return result
-        
-    def quantify_ctcf_heteromodifications(self):
-        df = self.pattern_df.loc[:, ("Chromosome", "Start", "End", "MC", "CM", "HC", "CH", "HM", "MH")]
-        df = df.loc[df.eval("(MC + CM + HC + CH + HM + MH) > 0")]
+
+    def hemihetero_sites(self, min_depth):
+        """
+        Restricts the dataset to just sites that are hetero or hemi modified in the majority of reads. 
+        """
+        df = self.ctcf_patterns.query(f"readCount >= {min_depth}")
+        return df.loc[df.eval("total_heterometh > total_homometh")]
+
+    def quantify_hemihetero_sites(self, merge_sites, min_depth):
+        if merge_sites:
+            df = self.hemihetero_sites(min_depth)
+        else:
+            df = self.ctcf_patterns
+            df = df.loc[df.eval("(MC + CM + HC + CH + HM + MH) > 0")]
+        df = df.loc[:, ("Chromosome", "Start", "End", "MC", "CM", "HC", "CH", "HM", "MH")]
 
         # need strand information from CTCF sites
         ctcf_join = (pr.PyRanges(df)
@@ -146,9 +157,9 @@ class PatternFrame:
         summary = summary.groupby(["motif_mod", "opp_mod"]).sum(numeric_only=True).reset_index()
         summary = summary.replace(["C", "M", "H"], ["C", "5mC", "5hmC"])
 
-        return  Summary(summary)
+        return  HemiHeteroPatterns(summary)
     
-class Summary:
+class HemiHeteroPatterns:
     def __init__(self, df):
         self.df = df
 
@@ -167,14 +178,14 @@ class Summary:
         summary["Percentage"] = (summary["Count"]/motif_total)*100
 
         return  summary
-
-# Loading JASPAR CTCF binding sites 
+    
 ctcf_bs = pr.PyRanges(pd.read_table("feature_references/CTCF_mm39_jaspar_sorted.tsv")
-                    .query("qvalue < 0.05")
-                    .rename(columns={"seqnames" : "Chromosome", "start" : "Start", "end" : "End", "strand" : "Strand"}))
+                          .query(f"qvalue < 0.05")
+                          .rename(columns={"seqnames" : "Chromosome", "start" : "Start", "end" : "End", "strand" : "Strand"}))
 
 def ctcf_intersect(df, **intersect_kwargs):
-    return pr.PyRanges(df).intersect(ctcf_bs, strandedness=False, **intersect_kwargs).as_df()
+        # Loading JASPAR CTCF binding sites 
+        return pr.PyRanges(df).intersect(ctcf_bs, strandedness=False, **intersect_kwargs).as_df()
 
 @timer
 def main(test_run=True, min_depth=1, merge_sites=False):
@@ -184,6 +195,7 @@ def main(test_run=True, min_depth=1, merge_sites=False):
 
     file_paths = [root_path + file for file in files]
 
+    
     with concurrent.futures.ProcessPoolExecutor(len(file_paths)) as load_executor:
         all_duplex_modbeds = [load_executor.submit(read_merge, path, test_run, replicate+1) for replicate, path in enumerate(file_paths)]
         all_duplex_modbeds = [modbed.result() for modbed in all_duplex_modbeds]
@@ -230,7 +242,7 @@ def main(test_run=True, min_depth=1, merge_sites=False):
             explode=(0, 0, 0, 0, .15))
 
     with concurrent.futures.ThreadPoolExecutor(4) as stat_executor:
-        hetero_mods_at_ctcf = [stat_executor.submit(pf.quantify_ctcf_heteromodifications) for pf in all_duplex_modbeds]
+        hetero_mods_at_ctcf = [stat_executor.submit(pf.quantify_hemihetero_sites, merge_sites, min_depth) for pf in all_duplex_modbeds]
         hetero_mods_at_ctcf = [summary.result() for summary in hetero_mods_at_ctcf]
 
         motifs_only = [summary.quantify_motif_strand() for summary in hetero_mods_at_ctcf]
@@ -295,7 +307,6 @@ def main(test_run=True, min_depth=1, merge_sites=False):
         ax.set_ylabel(None)
         ax.tick_params("both", left=False, labelleft=False)
         sns.despine(ax=ax, left=True)
-    # [sns.move_legend(ax, "upper center", frameon=False, ncols=2, title=None) for ax in [ax7, ax8, ax9]]
 
     for i, ax in enumerate(fig.axes[:(len(fig.axes)-2)]):
         ax.set_title(string.ascii_lowercase[i], fontdict={"fontweight" : "bold"}, loc="left")
@@ -310,9 +321,6 @@ def main(test_run=True, min_depth=1, merge_sites=False):
     else:
         fig.savefig("plots/ctcf_duplex_analysis.png")
         fig.savefig("plots/ctcf_duplex_analysis.svg")
-
-    #    homo_proportions = [stat_executor.submit(homo_ctcf_proportion_wrap, mb, min_depth) for mb in all_duplex_modbeds]
-    #    [print(proportion.result()) for proportion in homo_proportions]
 
 ##### Main function #####
 
