@@ -9,6 +9,8 @@ import argparse
 from AnalysisTools.helpers import timer
 import string
 import numpy as np
+import upsetplot
+import warnings
 
 def read_duplex_modbed(path, test_run=True, replicate=None):
     if test_run:
@@ -80,7 +82,7 @@ class PatternFrame:
         df = self.ctcf_patterns
         
         pie_data = pd.DataFrame({
-            "Pattern" : ["Homo-C", "Homo-5mC", "Homo-5hmC", "Hemi-", "Hetero-"],
+            "Pattern" : ["Homo-C", "Homo-5mC", "Homo-5hmC", "Hemi-dyad", "Hetero-dyad"],
             "Count" : [df["CC"].sum(), df["MM"].sum(), df["HH"].sum(), 
                     df["MC"].sum() + df["CM"].sum() + df["HC"].sum() + df["CH"].sum(),
                     df["MH"].sum() + df["HM"].sum()]
@@ -126,8 +128,8 @@ class PatternFrame:
         df = df.loc[:, ("Chromosome", "Start", "End", "MC", "CM", "HC", "CH", "HM", "MH")]
 
         # need strand information from CTCF sites
-        ctcf_join = (pr.PyRanges(df)
-                          .join(ctcf_bs, apply_strand_suffix=True, suffix="_CTCF")
+        ctcf_join = (pr.PyRanges(df, int64=True)
+                          .join(chip_merge, apply_strand_suffix=True, suffix="_CTCF")
                           .as_df())
         print(f"Identified {len(ctcf_join)} overlaps with CTCF binding sites.")           
 
@@ -163,6 +165,18 @@ class HemiHeteroPatterns:
     def __init__(self, df):
         self.df = df
 
+    def hemi(self):
+        summary = self.df.query("motif_mod == 'C' | opp_mod == 'C'")
+        total_count = summary["Count"].sum()
+        summary["Percentage"] = (summary["Count"].div(total_count))*100
+        return HemiHeteroPatterns(summary)
+
+    def hetero(self):
+        summary = self.df.query("(motif_mod == '5mC' & opp_mod == '5hmC') | (motif_mod == '5hmC' & opp_mod == '5mC')")
+        total_count = summary["Count"].sum()
+        summary["Percentage"] = (summary["Count"].div(total_count))*100
+        return HemiHeteroPatterns(summary)
+
     def quantify_motif_strand(self):
         summary = self.df
         return summary.groupby("motif_mod").sum(numeric_only=True)
@@ -176,16 +190,29 @@ class HemiHeteroPatterns:
         motif_total = summary.groupby("motif_mod")["Count"].transform("sum")
 
         summary["Percentage"] = (summary["Count"]/motif_total)*100
-
         return  summary
     
-ctcf_bs = pr.PyRanges(pd.read_table("feature_references/CTCF_mm39_jaspar_sorted.tsv")
-                          .query(f"qvalue < 0.05")
-                          .rename(columns={"seqnames" : "Chromosome", "start" : "Start", "end" : "End", "strand" : "Strand"}))
-
+ctcf_chip = pr.PyRanges(pd.read_table("data/ctcf/ChIP2MACS2/MACS2/ENCSR000CBN_peaks.narrowPeak", 
+                                      names=["Chromosome", "Start", "End", "Name", "Pileup", 
+                                             "Strand", "FoldDifference", "pValue", "qValue", 
+                                             "Peak"],
+                                      usecols=["Chromosome", "Start", "End", "FoldDifference", 
+                                               "pValue", "qValue"]), 
+                                      int64=True)
+ctcf_motif = pr.PyRanges(pd.read_table("feature_references/CTCF_mm39_jaspar_sorted.tsv",
+                                       names=["Chromosome", "Start", "End", "Width", "Strand",
+                                              "Name", "Score", "pValue", "qValue", "Sequence"],
+                                       usecols=["Chromosome", "Start", "End", "Strand"],
+                                       skiprows=1), 
+                                       int64=True)
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", FutureWarning)
+    chip_merge = ctcf_chip.join(ctcf_motif, how="left", 
+                                apply_strand_suffix=False, suffix="_Motif")
+    
 def ctcf_intersect(df, **intersect_kwargs):
         # Loading JASPAR CTCF binding sites 
-        return pr.PyRanges(df).intersect(ctcf_bs, strandedness=False, **intersect_kwargs).as_df()
+        return pr.PyRanges(df, int64=True).intersect(chip_merge, strandedness=False, **intersect_kwargs).as_df()
 
 @timer
 def main(test_run=True, min_depth=1, merge_sites=False):
@@ -195,35 +222,31 @@ def main(test_run=True, min_depth=1, merge_sites=False):
 
     file_paths = [root_path + file for file in files]
 
-    
     with concurrent.futures.ProcessPoolExecutor(len(file_paths)) as load_executor:
         all_duplex_modbeds = [load_executor.submit(read_merge, path, test_run, replicate+1) for replicate, path in enumerate(file_paths)]
-        all_duplex_modbeds = [modbed.result() for modbed in all_duplex_modbeds]
+        all_duplex_modbeds = [modbed.result() for modbed in all_duplex_modbeds] 
                               
-    fig = plt.figure(figsize=(89/25.4, 100/25.4), dpi=600, layout="constrained")
+    fig = plt.figure(figsize=(89/25.4, 89/25.4), dpi=600, layout="constrained")
 
     sns.set_style("ticks")
     mpl.rc('font', size=5)
 
-    gs = GridSpec(3, 4, fig)
+    gs = GridSpec(2, 2, fig)
 
-    ax1 = fig.add_subplot(gs[0, :2])
-    ax2 = fig.add_subplot(gs[0, 2:]) 
-    ax3 = fig.add_subplot(gs[1, :2])
-    ax4 = fig.add_subplot(gs[1, 2:])
+    ax1 = fig.add_subplot(gs[0, 0])
+    ax2 = fig.add_subplot(gs[0, 1]) 
 
-    sgs = gs[2, :2].subgridspec(1, 3)
-
-    ax7 = fig.add_subplot(sgs[0, 0])
-    ax8 = fig.add_subplot(sgs[0, 1])
-    ax9 = fig.add_subplot(sgs[0, 2])
+    sgs = gs[1, 0].subgridspec(3, 1)
+    c_ax = fig.add_subplot(sgs[0, 0])
+    mc_ax = fig.add_subplot(sgs[1, 0])
+    hmc_ax = fig.add_subplot(sgs[2, 0])
 
     palette = {
     "C" : "#e0f3db", 
     "5mC" : "#a8ddb5", 
     "5hmC" : "#43a2ca"
            }
-    
+        
     with concurrent.futures.ThreadPoolExecutor(4) as stat_executor:
         homohemi_proportions = [stat_executor.submit(pf.piechart_data) for pf in all_duplex_modbeds]
         homohemi_proportions = pd.concat([(proportion.result()) for proportion in homohemi_proportions]).reset_index()
@@ -232,9 +255,9 @@ def main(test_run=True, min_depth=1, merge_sites=False):
     homohemi_proportions = homohemi_proportions.replace(["total_homometh", "total_heterometh"], 
                                                         ["Homo-\nmodified", "Hetero-\nmodified"])
     
-    ax2.pie(pie_data["Count"], 
+    ax1.pie(pie_data["Count"], 
             labels=pie_data["Pattern"], 
-            colors=sns.color_palette("YlGn_r"),
+            colors=sns.color_palette("GnBu"),
             startangle=45, counterclock=False,
             autopct='%.1f',
             radius=0.75, rotatelabels=False,
@@ -248,10 +271,13 @@ def main(test_run=True, min_depth=1, merge_sites=False):
         motifs_only = [summary.quantify_motif_strand() for summary in hetero_mods_at_ctcf]
         motif_mod_summary = pd.concat([summary.assign(Replicate = i, 
                                                       Kind = "Motif") for i, summary in enumerate(motifs_only)])
+        
+        print(motif_mod_summary.groupby("motif_mod")["Percentage"].mean()); exit()
 
         opp_only = [summary.quantify_opp_strand() for summary in hetero_mods_at_ctcf]
         opp_mod_summary = pd.concat([summary.assign(Replicate = i, 
                                                     Kind = "Opposite") for i, summary in enumerate(opp_only)])
+        print(opp_mod_summary); exit()
         
         mod_combinations = pd.concat([summary.quantify_mod_combinations()
                                         .assign(Replicate = i) for i, summary in enumerate(hetero_mods_at_ctcf)]).reset_index()
@@ -261,66 +287,95 @@ def main(test_run=True, min_depth=1, merge_sites=False):
     sns.barplot(hetero_mod_sum, 
         x="Mod", y="Percentage",
         order=["C", "5mC", "5hmC"],
-        hue="Kind", palette="BuGn_r", dodge=True,
+        hue="Kind", palette="Paired", dodge=True,
         errorbar=("sd", 1), err_kws={"lw" : .8}, capsize=.5,
         width=.8,
-        ax=ax4)
+        ax=ax2)
         
-    ax4.set_ylabel("Percent of strand basecalls")
-    ax4.set_ylim(0, 100)
-    sns.move_legend(ax4, "upper left", title="Relation to motif strand", frameon=True, ncol=2)
+    ax2.set_ylabel("Percent of strand basecalls")
+    ax2.set_ylim(0, 70)
+    sns.move_legend(ax2, "upper left", title="Strand", frameon=False, ncol=2)
     c, m, h = [mod_combinations.groupby("motif_mod").get_group(mod) for mod in ["C", "5mC", "5hmC"]]
 
     sns.barplot(c, 
-            x="motif_mod", y="Percentage",
+            y="motif_mod", x="Percentage",
             hue_order=["5mC", "5hmC"],
             hue="opp_mod", palette=palette,
             errorbar=("sd", 1), err_kws={"lw" : .8}, capsize=.5,
             width=0.8, 
             legend=False,
-            ax=ax7)
+            ax=c_ax)
     
-    ax7.sharey(ax8)
-    ax7.set_ylabel("Percent modification\nopposite motif")
+    c_ax.sharex(mc_ax)
+    # ax7.set_ylabel("Percent modification\nopposite motif")
 
     sns.barplot(m, 
-                x="motif_mod", y="Percentage",
+                y="motif_mod", x="Percentage",
                 hue="opp_mod", palette=palette,
                 errorbar=("sd", 1), err_kws={"lw" : .8}, capsize=.5,
                 width=0.8, 
                 legend=False,
-                ax=ax8)
+                ax=mc_ax)
 
     sns.barplot(h, 
-                x="motif_mod", y="Percentage",
+                y="motif_mod", x="Percentage",
                 hue="opp_mod", palette=palette,
                 errorbar=("sd", 1), err_kws={"lw" : .8}, capsize=.5,
                 width=0.8, 
                 legend=False,
-                ax=ax9)
-    ax9.sharey(ax8)
+                ax=hmc_ax)
+    hmc_ax.sharex(mc_ax)
+    hmc_ax.set_xlabel("Percent opposite strand basecall")
     
     sns.despine()
 
-    [ax.set_xlabel(None) for ax in [ax2, ax4, ax7, ax8, ax9]]
-    for ax in [ax8, ax9]:
-        ax.set_ylabel(None)
-        ax.tick_params("both", left=False, labelleft=False)
-        sns.despine(ax=ax, left=True)
+    [ax.set_ylabel(None) for ax in [c_ax, mc_ax, hmc_ax]]
+
+    for ax in [c_ax, mc_ax]:
+        ax.set_xlabel(None)
+        ax.tick_params("both", bottom=False, labelbottom=False)
+        sns.despine(ax=ax, bottom=True)
 
     for i, ax in enumerate(fig.axes[:(len(fig.axes)-2)]):
-        ax.set_title(string.ascii_lowercase[i], fontdict={"fontweight" : "bold"}, loc="left")
+        ax.set_title(string.ascii_lowercase[i], fontdict={"fontweight" : "bold"}, loc="left")        
+        
+    # bbox = ax3.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
+    # uw, uh = bbox.width, bbox.height
 
-    for ax in [ax1, ax3]:
-        sns.despine(ax=ax, bottom=True, left=True)
-        ax.tick_params("both", bottom=False, left=False, 
-                        labelbottom=False, labelleft=False)
+    ctcf_concat = pd.concat([patternframe.ctcf_patterns for patternframe in all_duplex_modbeds])
+    ctcf_upset_mshp = upsetplot.from_memberships(memberships=[
+        ["C"], 
+        ["5mC"],
+        ["C", "5mC"],
+        ["5hmC"],
+        ["5mC", "5hmC"],
+        ["C", "5hmC"]],
+        data = [
+            ctcf_concat["CC"].sum(), 
+            ctcf_concat["MM"].sum(), 
+            ctcf_concat["CM"].sum() + ctcf_concat["MC"].sum(), 
+            ctcf_concat["HH"].sum(), 
+            ctcf_concat["HM"].sum() + ctcf_concat["MH"].sum(), 
+            ctcf_concat["CH"].sum() + ctcf_concat["HC"].sum()])
+    
+    upset_fig = plt.figure(dpi=600)
+
+    ctcf_upset = upsetplot.UpSet(ctcf_upset_mshp, sort_by="cardinality", sort_categories_by="input", show_percentages=True, 
+                                 facecolor="grey", 
+                                 element_size=None, 
+                                 intersection_plot_elements=3)
+
+    ctcf_upset.plot(upset_fig)
     
     if test_run:
         fig.savefig("plots/tests/ctcf_duplex_analysis.png")
+        upset_fig.savefig("plots/tests/ctcf_upset.png")
+
     else:
         fig.savefig("plots/ctcf_duplex_analysis.png")
         fig.savefig("plots/ctcf_duplex_analysis.svg")
+        upset_fig.savefig("plots/ctcf_upset.svg")
+        upset_fig.savefig("plots/ctcf_upset.png")
 
 ##### Main function #####
 
