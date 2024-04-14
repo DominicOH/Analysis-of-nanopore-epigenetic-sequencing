@@ -168,13 +168,17 @@ class HemiHeteroPatterns:
     def hemi(self):
         summary = self.df.query("motif_mod == 'C' | opp_mod == 'C'")
         total_count = summary["Count"].sum()
-        summary["Percentage"] = (summary["Count"].div(total_count))*100
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            summary["Percentage"] = (summary["Count"].div(total_count))*100
         return HemiHeteroPatterns(summary)
 
     def hetero(self):
         summary = self.df.query("(motif_mod == '5mC' & opp_mod == '5hmC') | (motif_mod == '5hmC' & opp_mod == '5mC')")
         total_count = summary["Count"].sum()
-        summary["Percentage"] = (summary["Count"].div(total_count))*100
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            summary["Percentage"] = (summary["Count"].div(total_count))*100
         return HemiHeteroPatterns(summary)
 
     def quantify_motif_strand(self):
@@ -191,7 +195,7 @@ class HemiHeteroPatterns:
 
         summary["Percentage"] = (summary["Count"]/motif_total)*100
         return  summary
-    
+        
 ctcf_chip = pr.PyRanges(pd.read_table("data/ctcf/ChIP2MACS2/MACS2/ENCSR000CBN_peaks.narrowPeak", 
                                       names=["Chromosome", "Start", "End", "Name", "Pileup", 
                                              "Strand", "FoldDifference", "pValue", "qValue", 
@@ -226,20 +230,23 @@ def main(test_run=True, min_depth=1, merge_sites=False):
         all_duplex_modbeds = [load_executor.submit(read_merge, path, test_run, replicate+1) for replicate, path in enumerate(file_paths)]
         all_duplex_modbeds = [modbed.result() for modbed in all_duplex_modbeds] 
                               
-    fig = plt.figure(figsize=(89/25.4, 89/25.4), dpi=600, layout="constrained")
+    fig = plt.figure(figsize=(120/25.4, 89/25.4), dpi=600, layout="constrained")
 
     sns.set_style("ticks")
     mpl.rc('font', size=5)
 
-    gs = GridSpec(2, 2, fig)
+    gs = GridSpec(2, 3, fig)
 
     ax1 = fig.add_subplot(gs[0, 0])
-    ax2 = fig.add_subplot(gs[0, 1]) 
+    ax2 = fig.add_subplot(gs[0, 1])
+    ax3 = fig.add_subplot(gs[0, 2])
 
-    sgs = gs[1, 0].subgridspec(3, 1)
-    c_ax = fig.add_subplot(sgs[0, 0])
-    mc_ax = fig.add_subplot(sgs[1, 0])
-    hmc_ax = fig.add_subplot(sgs[2, 0])
+    sgs2 = gs[1, 0].subgridspec(3, 1)
+    c_ax = fig.add_subplot(sgs2[0, 0])
+    mc_ax = fig.add_subplot(sgs2[1, 0])
+    hmc_ax = fig.add_subplot(sgs2[2, 0])
+
+    ax4 = fig.add_subplot(gs[1, 1:])
 
     palette = {
     "C" : "#e0f3db", 
@@ -265,26 +272,25 @@ def main(test_run=True, min_depth=1, merge_sites=False):
             explode=(0, 0, 0, 0, .15))
 
     with concurrent.futures.ThreadPoolExecutor(4) as stat_executor:
-        hetero_mods_at_ctcf = [stat_executor.submit(pf.quantify_hemihetero_sites, merge_sites, min_depth) for pf in all_duplex_modbeds]
-        hetero_mods_at_ctcf = [summary.result() for summary in hetero_mods_at_ctcf]
+        hemihetero_mods_at_ctcf = [stat_executor.submit(pf.quantify_hemihetero_sites, merge_sites, min_depth) for pf in all_duplex_modbeds]
+        hemihetero_mods_at_ctcf = [summary.result() for summary in hemihetero_mods_at_ctcf]
 
-        motifs_only = [summary.quantify_motif_strand() for summary in hetero_mods_at_ctcf]
+        # Hemi 
+
+        motifs_only = [summary.hemi().quantify_motif_strand() for summary in hemihetero_mods_at_ctcf]
         motif_mod_summary = pd.concat([summary.assign(Replicate = i, 
                                                       Kind = "Motif") for i, summary in enumerate(motifs_only)])
         
-        print(motif_mod_summary.groupby("motif_mod")["Percentage"].mean()); exit()
-
-        opp_only = [summary.quantify_opp_strand() for summary in hetero_mods_at_ctcf]
+        opp_only = [summary.hemi().quantify_opp_strand() for summary in hemihetero_mods_at_ctcf]
         opp_mod_summary = pd.concat([summary.assign(Replicate = i, 
                                                     Kind = "Opposite") for i, summary in enumerate(opp_only)])
-        print(opp_mod_summary); exit()
         
         mod_combinations = pd.concat([summary.quantify_mod_combinations()
-                                        .assign(Replicate = i) for i, summary in enumerate(hetero_mods_at_ctcf)]).reset_index()
+                                        .assign(Replicate = i) for i, summary in enumerate(hemihetero_mods_at_ctcf)]).reset_index()
 
-    hetero_mod_sum = pd.concat([motif_mod_summary, opp_mod_summary]).reset_index(names="Mod")
+    hemi_mod_sum = pd.concat([motif_mod_summary, opp_mod_summary]).reset_index(names="Mod")
 
-    sns.barplot(hetero_mod_sum, 
+    sns.barplot(hemi_mod_sum, 
         x="Mod", y="Percentage",
         order=["C", "5mC", "5hmC"],
         hue="Kind", palette="Paired", dodge=True,
@@ -295,6 +301,34 @@ def main(test_run=True, min_depth=1, merge_sites=False):
     ax2.set_ylabel("Percent of strand basecalls")
     ax2.set_ylim(0, 70)
     sns.move_legend(ax2, "upper left", title="Strand", frameon=False, ncol=2)
+
+        # Hetero
+    
+    motifs_only = [summary.hetero().quantify_motif_strand() for summary in hemihetero_mods_at_ctcf]
+    motif_mod_summary = pd.concat([summary.assign(Replicate = i, 
+                                                    Kind = "Motif") for i, summary in enumerate(motifs_only)])
+    
+    opp_only = [summary.hetero().quantify_opp_strand() for summary in hemihetero_mods_at_ctcf]
+    opp_mod_summary = pd.concat([summary.assign(Replicate = i, 
+                                                Kind = "Opposite") for i, summary in enumerate(opp_only)])
+    
+    mod_combinations = pd.concat([summary.quantify_mod_combinations()
+                                    .assign(Replicate = i) for i, summary in enumerate(hemihetero_mods_at_ctcf)]).reset_index()
+
+    hetero_mod_sum = pd.concat([motif_mod_summary, opp_mod_summary]).reset_index(names="Mod")
+
+    sns.barplot(hetero_mod_sum, 
+        x="Mod", y="Percentage",
+        order=["5mC", "5hmC"],
+        hue="Kind", palette="Paired", dodge=True,
+        errorbar=("sd", 1), err_kws={"lw" : .8}, capsize=.5,
+        width=.8,
+        ax=ax3)
+        
+    ax3.set_ylabel("Percent of strand basecalls")
+    ax3.set_ylim(0, 70)
+    sns.move_legend(ax3, "upper left", title="Strand", frameon=False, ncol=2)
+
     c, m, h = [mod_combinations.groupby("motif_mod").get_group(mod) for mod in ["C", "5mC", "5hmC"]]
 
     sns.barplot(c, 
