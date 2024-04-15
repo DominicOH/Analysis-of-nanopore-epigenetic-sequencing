@@ -41,9 +41,7 @@ def merge_pattern(df):
                                  "-,h,C" : "CH",
                                  "m,h,C" : "MH",
                                  "h,m,C" : "HM"})
-                .eval("total_homometh = CC + MM + HH")
-                .eval("total_heterometh = CM + MC + CH + HC + MH + HM")
-                .eval("readCount = total_homometh + total_heterometh"))
+                .eval("readCount = CC + MM + HH + CM + MC + HC + CH + MH + HM"))
         return PatternFrame(df)
 
 def read_merge(path, test_run=True, replicate=None):
@@ -53,28 +51,17 @@ class PatternFrame:
     def __init__(self, pattern_df):
         self.pattern_df = pattern_df
         self.ctcf_patterns = ctcf_intersect(pattern_df)
-    
-    def quantify_homomodification_type(self):
-        """
-        Quantifies modification type for homomodified CTCF-overlapping CpG sites. 
-        """
-        counts_df = self.ctcf_patterns
-        counts_df = counts_df.loc[:,("CC", "HH", "MM")].sum().reset_index(name="Count")
-        counts_df["Percentage"] = (counts_df["Count"]/counts_df["Count"].sum()).multiply(100)
-        counts_df = counts_df.replace(["CC", "MM", "HH"], ["C", "5mC", "5hmC"])        
-        return counts_df
+
+    def merge_patterns(self, min_depth):
+        df = (self.ctcf_patterns
+              .query(f"readCount > {min_depth}")
+              .eval("Hetero = MH + HM")
+              .eval("Hemi = CM + MC + CH + HC"))
         
-    def quantify_homomodified_vs_heteromodified(self):
-        """
-        Finds the proportion of CTCF-bind overlapping CpG basecalls that are homo/heteromodified. 
-        """
-        df = self.ctcf_patterns
-        summary = ((df[["total_homometh", "total_heterometh"]].sum()
-                   .div(df["readCount"].sum()).multiply(100))
-                   .reset_index(name="Percentage"))
-        
-        return summary
-    
+        df = df.assign(Majority = lambda r: r.loc[:, ("CC", "MM", "HH", "Hetero", "Hemi")].idxmax(axis=1))
+
+        return MergedSites(df, min_depth)
+           
     def piechart_data(self):
         """
         Outputs a dataframe counting all homo-modification states. Hetero- and hemi-modification states are grouped. 
@@ -89,48 +76,15 @@ class PatternFrame:
             })
 
         return pie_data
-    
-    def extract_heteromodified_site(self, min_depth=1):
-        """
-        Finds the proportion of CTCF-bind overlapping CpG basecalls that are homo/heteromodified. 
-        """
-        df = self.ctcf_patterns
-        df = df.query(f"readCount >= {min_depth}")
-        hetero = df.query("total_heterometh > total_homometh")
-        
-        return hetero
-    
-    def quantify_homo_hetero_site_proportion(self, min_depth=1):
-        """
-        Finds the proportion of CTCF-bind overlapping CpG sites that are homo/heteromodified. 
-        """
-        df = self.ctcf_patterns
-        df = df.query(f"readCount >= {min_depth}")
-        hetero = len(df.query("total_heterometh > total_homometh"))
-        result = pd.DataFrame({"Pattern" : ["total_heterometh", "total_homometh"],
-                               "Percentage" : [(hetero/len(df))*100, ((len(df) - hetero)/len(df))*100]})
-        
-        return result
 
-    def hemihetero_sites(self, min_depth):
-        """
-        Restricts the dataset to just sites that are hetero or hemi modified in the majority of reads. 
-        """
-        df = self.ctcf_patterns.query(f"readCount >= {min_depth}")
-        return df.loc[df.eval("total_heterometh > total_homometh")]
-
-    def quantify_hemihetero_sites(self, merge_sites, min_depth):
-        if merge_sites:
-            df = self.hemihetero_sites(min_depth)
-        else:
-            df = self.ctcf_patterns
-            df = df.loc[df.eval("(MC + CM + HC + CH + HM + MH) > 0")]
-        df = df.loc[:, ("Chromosome", "Start", "End", "MC", "CM", "HC", "CH", "HM", "MH")]
+    def quantify_hemihetero_sites(self, min_depth):
+        df = self.ctcf_patterns
 
         # need strand information from CTCF sites
         ctcf_join = (pr.PyRanges(df, int64=True)
                           .join(chip_merge, apply_strand_suffix=True, suffix="_CTCF")
                           .as_df())
+        
         print(f"Identified {len(ctcf_join)} overlaps with CTCF binding sites.")           
 
         # remove those with no hemimethlyation
@@ -138,6 +92,7 @@ class PatternFrame:
                                              var_name="Pattern", 
                                              value_vars=["MC", "CM", "HC", "CH", "HM", "MH"], 
                                              value_name="Count")
+        
         ctcf_join = ctcf_join.loc[ctcf_join.eval("Count > 0")]
 
         summary = (ctcf_join.groupby(["Strand_CTCF", "Pattern"])["Count"]
@@ -160,6 +115,28 @@ class PatternFrame:
         summary = summary.replace(["C", "M", "H"], ["C", "5mC", "5hmC"])
 
         return  HemiHeteroPatterns(summary)
+    
+class MergedSites(PatternFrame):
+    def __init__(self, pattern_df, min_depth):
+        super().__init__(pattern_df)
+        self.min_depth = min_depth
+
+    def piechart_data(self):
+        """
+        Outputs a dataframe counting all homo-modification states. Hetero- and hemi-modification states are grouped. 
+        """
+        df = self.pattern_df
+        pie_data = df["Majority"].value_counts(normalize=True)
+
+        return pie_data
+    
+    def extract_hemi_states(self):
+        hemi = self.pattern_df.query("Majority == 'Hemi'")
+        return MergedSites(hemi, self.min_depth)
+
+    def extract_hetero_states(self):
+        hetero = self.pattern_df.query("Majority == 'Hetero'")
+        return MergedSites(hetero, self.min_depth)
     
 class HemiHeteroPatterns:
     def __init__(self, df):
@@ -219,7 +196,7 @@ def ctcf_intersect(df, **intersect_kwargs):
         return pr.PyRanges(df, int64=True).intersect(chip_merge, strandedness=False, **intersect_kwargs).as_df()
 
 @timer
-def main(test_run=True, min_depth=1, merge_sites=False):
+def main(test_run=True, min_depth=5, merge_sites=False):
     root_path = "data/duplex_data/"
     files = ["cbm2/CBM_2_rep1.masked.bed", "cbm2/CBM_2_rep2.masked.bed",
              "cbm3/CBM_3_rep1.sorted.bam.bed", "cbm3/CBM_3_rep2.sorted.bam.bed"]
@@ -228,7 +205,8 @@ def main(test_run=True, min_depth=1, merge_sites=False):
 
     with concurrent.futures.ProcessPoolExecutor(len(file_paths)) as load_executor:
         all_duplex_modbeds = [load_executor.submit(read_merge, path, test_run, replicate+1) for replicate, path in enumerate(file_paths)]
-        all_duplex_modbeds = [modbed.result() for modbed in all_duplex_modbeds] 
+        all_duplex_modbeds = [modbed.result() for modbed in all_duplex_modbeds]
+        merged_patterns = [pf.merge_patterns(5) for pf in all_duplex_modbeds]
                               
     fig = plt.figure(figsize=(120/25.4, 89/25.4), dpi=600, layout="constrained")
 
@@ -254,22 +232,24 @@ def main(test_run=True, min_depth=1, merge_sites=False):
     "5hmC" : "#43a2ca"
            }
         
-    with concurrent.futures.ThreadPoolExecutor(4) as stat_executor:
-        homohemi_proportions = [stat_executor.submit(pf.piechart_data) for pf in all_duplex_modbeds]
-        homohemi_proportions = pd.concat([(proportion.result()) for proportion in homohemi_proportions]).reset_index()
-
-    pie_data = homohemi_proportions.groupby("Pattern")["Count"].sum().reset_index()
-    homohemi_proportions = homohemi_proportions.replace(["total_homometh", "total_heterometh"], 
-                                                        ["Homo-\nmodified", "Hetero-\nmodified"])
+    pie_data = pd.concat([merged_pattern.piechart_data().reset_index(name="Proportion") for merged_pattern in merged_patterns])
+    pie_data = (pie_data.groupby("index")
+                .mean(numeric_only=True)
+                .reset_index()
+                .replace(["CC", "MM", "HH", "Hetero", "Hemi"], 
+                         ["Homo-C", "Homo-M", "Homo-H", "Hetero-dyad", "Hemi-dyad"]))
     
-    ax1.pie(pie_data["Count"], 
-            labels=pie_data["Pattern"], 
+    ax1.pie(pie_data["Proportion"], 
+            labels=pie_data["index"], 
             colors=sns.color_palette("GnBu"),
             startangle=45, counterclock=False,
             autopct='%.1f',
             radius=0.75, rotatelabels=False,
             labeldistance=1.25, pctdistance=.75, 
-            explode=(0, 0, 0, 0, .15))
+            explode=(0, .15, .15, .15, .15))
+
+    all_duplex_modbeds[0].merge_patterns(min_depth).extract_hemi_states().quantify_hemihetero_sites(min_depth)
+    exit()
 
     with concurrent.futures.ThreadPoolExecutor(4) as stat_executor:
         hemihetero_mods_at_ctcf = [stat_executor.submit(pf.quantify_hemihetero_sites, merge_sites, min_depth) for pf in all_duplex_modbeds]
@@ -370,7 +350,7 @@ def main(test_run=True, min_depth=1, merge_sites=False):
         ax.tick_params("both", bottom=False, labelbottom=False)
         sns.despine(ax=ax, bottom=True)
 
-    for i, ax in enumerate(fig.axes[:(len(fig.axes)-2)]):
+    for i, ax in enumerate([ax1, ax2, ax3, c_ax, ax4]):
         ax.set_title(string.ascii_lowercase[i], fontdict={"fontweight" : "bold"}, loc="left")        
         
     # bbox = ax3.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
@@ -424,7 +404,7 @@ if __name__=="__main__":
                         help="Whether a test output is produced.") 
     parser.add_argument("--min_depth", 
                         dest="min_depth", 
-                        default=1,
+                        default=5,
                         required=False,
                         help="Whether to filter the dataset by depth at CpG.")
     parser.add_argument("--merge_sites", 
