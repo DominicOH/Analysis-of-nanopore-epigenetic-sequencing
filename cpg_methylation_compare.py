@@ -2,9 +2,7 @@ import argparse
 import pandas as pd
 import numpy as np
 import gc
-from sklearn.metrics import RocCurveDisplay, roc_auc_score
 from imblearn.over_sampling import ADASYN
-from collections import Counter
 from sklearn.preprocessing import Binarizer
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -14,18 +12,6 @@ from AnalysisTools.helpers import timer
 from AnalysisTools.common import *
 import string
 
-def adasyn_roc(df, bs, ax, label, **kwargs):
-    binarizer = Binarizer(threshold=(2/3)*100)
-
-    X = df["Nanopore mean"].astype(np.int8).to_numpy().reshape(-1, 1) 
-    y = binarizer.fit_transform(df[f"{bs} mean"].to_numpy().reshape((-1, 1)))
-
-    X_res, y_res = ADASYN(random_state=0).fit_resample(X, y)
-    
-    print(f'Original true values for {bs}: {Counter(y.ravel())}')
-    print(f'Resampled true values for {bs} {Counter(y_res.ravel())}')
-    
-    return RocCurveDisplay.from_predictions(y_res, X_res, ax=ax, label=f"{label}: {round(roc_auc_score(y_res, X_res), 3)}", **kwargs)
 
 def prep_dev_plot(df, bs_method, mod):
     df = (df.reset_index()
@@ -35,20 +21,16 @@ def prep_dev_plot(df, bs_method, mod):
     return df
 @timer
 def fig_main(dryrun=True):
-    fig = plt.figure(figsize=(89/25.4, 120/25.4), dpi=600, layout="constrained")
+    fig = plt.figure(figsize=(89/25.4, 89/25.4), dpi=600, layout="constrained")
 
     sns.set_style("ticks")
     mpl.rc('font', size=5)
 
-    gs = GridSpec(3, 2, fig)
+    gs = GridSpec(1, 3, fig)
 
     ax1 = fig.add_subplot(gs[0, 0])
     ax2 = fig.add_subplot(gs[0, 1])
-    ax3 = fig.add_subplot(gs[1, 0])
-    ax4 = fig.add_subplot(gs[1, 1])
-    ax5 = fig.add_subplot(gs[2, 0])
-    ax6 = fig.add_subplot(gs[2, 1])
-
+    ax3 = fig.add_subplot(gs[0, 2])
 
     # Initial data collection # 
     # Should aim to generalise fetch_modbed data loading
@@ -83,6 +65,7 @@ def fig_main(dryrun=True):
     tab_average = tab_average.rename(columns={"percentMeth_mod" : "percentMeth_5hmC"})        
 
     print("Loaded data")
+
     # General distribution comparison # 
 
     dfs = [nanopore_average, ox_average, nanopore_average, tab_average]
@@ -110,21 +93,6 @@ def fig_main(dryrun=True):
 
     gc.collect()
 
-    # General distribution comparison # 
-
-    pos_ctrl, neg_ctrl = fetch_controls(["readCount", "N_mC"], dryrun=dryrun)
-    m_average = merge_positions(pos_ctrl, True, "N_5mC")
-    u_average = merge_positions(neg_ctrl, True, "N_5mC")
-
-    del pos_ctrl, neg_ctrl
-    gc.collect()
-
-    m_average["Truth"], u_average["Truth"] = 1, 0
-    control_array = pd.concat([m_average, u_average], ignore_index=True, copy=False)
-
-    del m_average, u_average
-    gc.collect()
-
     for ax in [ax1, ax2]:
         ax.legend() 
         ax.set_aspect(100)
@@ -133,43 +101,6 @@ def fig_main(dryrun=True):
     sns.move_legend(ax1, "upper left", frameon=False)
     sns.move_legend(ax2, "lower right", frameon=False)
 
-    # KDE site comparison # 
-
-    def kdeplot(df, bis_col, c, ax):
-        plot = sns.kdeplot(df, 
-                        x=bis_col, y="Nanopore mean", 
-                        fill=True, color=c,
-                        ax=ax)
-        return plot
-
-    print("Plotting KDEs")
-    with concurrent.futures.ThreadPoolExecutor(2) as kde_executor:
-        kde_futures = [kde_executor.submit(kdeplot, df, col, c, ax) for df, col, c, ax in zip([nano_oxbs, nano_tab], 
-                                                                                              ["oxBS mean", "TAB mean"], 
-                                                                                              ["#74c476", "#6baed6"],
-                                                                                              [ax3, ax4]
-                                                                                              )]
-        [future.result() for future in kde_futures]  
-
-    ax3.set_xlabel("oxBS-seq site 5mC (%)")
-    ax3.set_ylabel("Nanopore site 5mC (%)")
-
-    ax4.set_xlabel("TAB-seq site 5hmC (%)")
-    ax4.set_ylabel("Nanopore site 5hmC (%)")
-
-    sns.despine()
-
-    for ax in [ax3, ax4]:
-        ax.set_aspect("equal")
-
-        ax.set_xticks(range(0, 120, 20))
-        ax.set_yticks(range(0, 120, 20))
-        sns.despine(ax=ax, top=False, right=False)
-        
-        ax.set_xlim(0, 100)
-        ax.set_ylim(0, 100)
-
-    gc.collect()
     print("Plotting deviation")
     with concurrent.futures.ProcessPoolExecutor(2) as dev_plot_executor:
         dev_plot_futures = [dev_plot_executor.submit(prep_dev_plot, df, bs_method, mod) for df, bs_method, mod, in zip([nano_oxbs, nano_tab], 
@@ -185,40 +116,18 @@ def fig_main(dryrun=True):
                 element="step", fill=False, 
                 lw=0.8,
                 hue="Mod", palette="GnBu",
-                ax=ax5)
+                ax=ax3)
     
-    ax5.set_ylim((0, 0.1))
-    ax5.set_xlim((-50, 50))
-    ax5.set_aspect(1000)
+    ax3.set_ylim((0, 0.1))
+    ax3.set_xlim((-50, 50))
+    ax3.set_aspect(1000)
+    ax3.set_xlabel("Bisulphite % - Nanopore %")
 
-    ax5.set_xlabel("Bisulphite % - Nanopore %")
-    sns.move_legend(ax5, "upper right", frameon=False, title=None)
-
-    # site comparison ROC # 
-
-    print("Plotting ROCs")
-    RocCurveDisplay.from_predictions(control_array["Truth"], control_array["percentMeth_5mC"],
-                                    c="#bae4bc", lw=0.8,
-                                    label=f"5mC (Control): {round(roc_auc_score(control_array['Truth'], control_array['percentMeth_5mC']), 3)}",
-                                    ax=ax6)
-    del control_array
-    gc.collect()
-
-    dfs = [nano_oxbs, nano_tab]
-    bs_methods = ["oxBS", "TAB"]
-    label = ["5mC (oxBS)",  "5hmC (TAB)"]
-    kwargs = [{"c" : "#7bccc4", "lw" : 0.8}, 
-              {"c" : "#2b8cbe", "lw" : 0.8}]
-    
-    with concurrent.futures.ThreadPoolExecutor(2) as roc_executor:
-        roc_futures = [roc_executor.submit(adasyn_roc, df, bs, ax6, label, **kwargs) for df, bs, label, kwargs in zip(dfs, bs_methods,label, kwargs)]
-        [future.result() for future in roc_futures]
-    
-    ax6.set_aspect("equal")
-    sns.move_legend(ax6, "lower left", frameon=False)
-    ax6.get_legend().set_in_layout(False)
+    sns.move_legend(ax3, "upper right", frameon=False, title=None)
+    sns.despine()
 
     print("Done. Saving")
+
     for index, ax in enumerate(fig.axes):
         ax.set_title(f"{string.ascii_lowercase[index]}", fontdict={"fontweight" : "bold"}, loc="left")
 
