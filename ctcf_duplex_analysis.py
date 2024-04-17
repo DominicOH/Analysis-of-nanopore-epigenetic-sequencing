@@ -260,9 +260,9 @@ def main(test_run=True, min_depth=5):
             colors=sns.color_palette("GnBu"),
             startangle=45, counterclock=False,
             autopct='%.1f',
-            radius=0.75, rotatelabels=False,
-            labeldistance=1.25, pctdistance=.75, 
-            explode=(0, .15, .15, .15, .15))
+            radius=1, rotatelabels=False,
+            labeldistance=1.25, pctdistance=.75,
+            wedgeprops = {'linewidth': 0.1})
     
     with concurrent.futures.ThreadPoolExecutor(4) as stat_executor:
         mod_combinations = stat_executor.map(lambda pf: (pf.summarise_ctcf_duplex_states()
@@ -278,9 +278,11 @@ def main(test_run=True, min_depth=5):
             hue="opp_mod", palette=palette,
             errorbar=("sd", 1), err_kws={"lw" : .8}, capsize=.5,
             width=0.8, 
-            legend=False,
+            legend=True,
             ax=c_ax)
-    
+
+    sns.move_legend(c_ax, loc="upper right", title=None, frameon=False)
+    c_ax.get_legend().set_in_layout(False)
     # ax7.set_ylabel("Percent modification\nopposite motif")
 
     sns.barplot(m, 
@@ -315,9 +317,12 @@ def main(test_run=True, min_depth=5):
         sns.despine(ax=ax, bottom=True)
     mc_ax.set_ylabel("Modification at motif")
 
+    # Hemi # 
+
     with concurrent.futures.ThreadPoolExecutor(4) as stat_executor:
         hemi_mods_at_ctcf = stat_executor.map(lambda pf: (pf.extract_hemi_states()
                                                             .summarise_ctcf_duplex_states()
+                                                            .filter_hemi_reads()
                                                             .quantify_strands()), 
                                               merged_patterns)
 
@@ -338,13 +343,16 @@ def main(test_run=True, min_depth=5):
         print(mod, stats.ttest_ind(motif, opp))
           
     ax2.set_ylabel("Percent of strand modification")
-    ax2.set_ylim(0, 70)
-    sns.move_legend(ax2, "upper left", title="Strand", frameon=False, ncol=2)
-    ax2.set_title(f"Hemi-dyads\nn={hemi_mod_summary['Count'].sum()}", loc="center")
+    ax2.set_ylim(0)
+    sns.move_legend(ax2, "upper right", title="Strand", frameon=False)
+    ax2.set_title(f"Hemi-dyads\nn={hemi_mod_summary['Count'].sum()} reads", loc="center")
+
+    # Hetero # 
 
     with concurrent.futures.ThreadPoolExecutor(4) as stat_executor:
         hetero_mods_at_ctcf = stat_executor.map(lambda pf: (pf.extract_hetero_states()
                                                               .summarise_ctcf_duplex_states()
+                                                              .filter_hetero_reads()
                                                               .quantify_strands()), 
                                                 merged_patterns)
 
@@ -352,13 +360,13 @@ def main(test_run=True, min_depth=5):
 
     sns.barplot(hetero_mod_summary, 
         x="Mod", y="Percentage",
-        order=["C", "5mC", "5hmC"],
+        order=["5mC", "5hmC"],
         hue="Strand", palette=sns.color_palette("Paired", 4)[2:], dodge=True,
         errorbar=("sd", 1), err_kws={"lw" : .8}, capsize=.5,
         width=.8,
         ax=ax3)
     
-    for mod in ["C", "5mC", "5hmC"]:
+    for mod in ["5mC", "5hmC"]:
         mod_group = hetero_mod_summary.groupby("Mod").get_group(mod)
         motif = np.array(mod_group.query("Strand == 'Motif'")["Percentage"])
         opp = np.array(mod_group.query("Strand == 'Opposite'")["Percentage"])
@@ -367,7 +375,7 @@ def main(test_run=True, min_depth=5):
     ax3.set_ylabel("Percent of strand basecalls")
     ax3.set_ylim(0, 70)
     sns.move_legend(ax3, "upper left", title="Strand", frameon=False, ncol=2)
-    ax3.set_title(f"Hetero-dyads\nn={hetero_mod_summary['Count'].sum()}", loc="center")
+    ax3.set_title(f"Hetero-dyads\nn={hetero_mod_summary['Count'].sum()} reads", loc="center")
 
     for ax in [ax2, ax3]:
         ax.set_xlabel(None)
@@ -422,6 +430,8 @@ def main(test_run=True, min_depth=5):
                 .join(chip_merge, apply_strand_suffix=True, suffix="_CTCF"))
                 .as_df()
                 .sort_values("qValue", ascending=False)
+                .groupby(["Chromosome", "Start", "End"], observed=True)
+                .head(1)
                 .to_excel(writer, sheet_name=f"Sheet {i+1}", index=False))
 
 ##### Main function #####
