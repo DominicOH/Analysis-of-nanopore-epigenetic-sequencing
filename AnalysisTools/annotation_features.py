@@ -73,6 +73,3 @@ class Annotator:
             obj = pr.PyRanges(obj)
         
         return obj.join(feature_pr, strandedness=False, suffix="_Feature", apply_strand_suffix=False, **join_kwargs).as_df()
-        
-if __name__ == "__main__":
-    ...
