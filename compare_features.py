@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 from matplotlib.gridspec import GridSpec
 import string
+from sklearn import metrics
 from scipy import stats
 
 def group_feature(annotated_df):
@@ -29,9 +30,8 @@ def enrichment_wrap(annotated_df, mean):
     return assign_enrichment(grouped_df, mean)
 
 def annotate_main(df_list, annotator):
-    
-    global means
     means = [df["percentMeth_5hmC"].mean() for df in df_list]
+    print(means)
 
     with concurrent.futures.ProcessPoolExecutor(len(df_list)) as executor:
         annotation_futures = [executor.submit(annotator.annotate, df) for df in df_list]
@@ -51,118 +51,106 @@ def plot_kde(df, ax):
                        color=sns.color_palette("Greens", 5)[4], fill=True,
                        ax=ax)
 
+def fetch_and_merge(path, cols):
+    dfs = fetch_modbeds(path, cols)
+    dfs = [df.rename(columns={"N_mod":"N_5hmC"}, errors="ignore") for df in dfs]
+    return merge_positions(dfs, calculate_percentage=True, cols=["N_5hmC"])
+
+def cohen(x, y):
+    mean_diff = np.mean(x) - np.mean(y)
+    std = np.sqrt((np.std(x, ddof=1)**2 + np.std(y, ddof=1)**2) / 2)
+    return mean_diff / std
+
+def calculate_stats(df):
+    out = {}
+    for feature_type in df["feature_type"].unique():
+        x = (df.groupby(["variable", "feature_type"])
+             .get_group(("TAB", feature_type))["value"]
+             .to_numpy())
+        y = (df.groupby(["variable", "feature_type"])
+             .get_group(("Nanopore", feature_type))["value"]
+             .to_numpy())
+        mw = stats.mannwhitneyu(x, y)
+        cohen_stat = cohen(x, y)
+        rmsd = metrics.mean_squared_error(x, y, squared=False)
+        out.update({feature_type : [round(n, 4) for n in [cohen_stat, rmsd, mw.pvalue]]})
+    return out
+
+
 @timer
 def fig_main(dryrun):
     # Loading data # 
+    if dryrun:
+        nano_path = "data/dryruns/modbeds/nanopore/"
+        tab_path = "data/dryruns/modbeds/tab/"
 
-    nanopore_dfs = fetch_nanopore(["readCount", "N_hmC"], dryrun=dryrun)
-    nanopore_df = merge_positions(nanopore_dfs, ["N_5hmC"], False).reset_index()
-    nanopore_df["Method"] = "Nanopore"
+    else:
+        nano_path = "data/modbases/modbeds/nanopore/"
+        tab_path = "data/modbases/modbeds/tab/"
 
-    tab_dfs = fetch_tab(["readCount", "N_mod"], dryrun=dryrun)
-    tab_df = merge_positions(tab_dfs, ["N_5hmC"], False).reset_index()
-    tab_df["Method"] = "TAB"
+    paths = [nano_path, tab_path]
+    cols = [["readCount", "N_hmC"], ["readCount", "N_mod"]]
+
+    with concurrent.futures.ProcessPoolExecutor(2) as fetch_executor:
+        modbeds_future = [fetch_executor.submit(fetch_and_merge, path, cols) for path, cols in zip(paths, cols)]
+        dfs = [future.result().reset_index() for future in modbeds_future]
+    dfs = [df.assign(Method = method) for df, method in zip(dfs, ["Nanopore", "TAB"])]
 
     # Data processing # 
-
-    all_dfs = [nanopore_df, tab_df]
-    del nanopore_df, tab_df
 
     feature_annotator = annotation_features.Annotator("/mnt/data1/doh28/analyses/mouse_hydroxymethylome_analysis/feature_references/feature_comparison/")
     cgi_annotator = annotation_features.Annotator("/mnt/data1/doh28/analyses/mouse_hydroxymethylome_analysis/feature_references/cgi/")
 
-    features_enrichment = annotate_main(all_dfs, feature_annotator)
-    cgi_enrichment = annotate_main(all_dfs, cgi_annotator)
+    with concurrent.futures.ProcessPoolExecutor(2) as annotation_executor:
+        annotation_futures = [annotation_executor.submit(annotate_main, dfs, annotator) for annotator in [feature_annotator, cgi_annotator]]
+        features_enrichment, cgi_enrichment = [future.result() for future in annotation_futures]
 
-    del all_dfs
+    del dfs
 
-    features_enrichment = features_enrichment.replace(["intron", "cds", "intergenic", "allExons", "genes", "1kbPromoter"],
-                                                  ["Intron", "Exon (coding)", "Intergenic", "Exon (all)", "Whole gene", "1kb promoter"])
+    features_enrichment = features_enrichment.replace(["intron", "allExons", "genes", "1kbPromoter"],
+                                                  ["Intron", "Exon", "Genic", "Promoter"])
 
     features_enrichment["feature_type"] = pd.Categorical(features_enrichment.feature_type, 
-                                                        ["Intergenic", "1kb promoter", "5UTR", "Intron", "Exon (coding)", "Exon (all)", "Whole gene", "3UTR"], 
-                                                        ordered=True)
-    
-    def prep_barplot(annotated_df, categories):
-        barplot_df = (annotated_df.query("CpG_count_Nanopore > 4 & CpG_count_TAB > 4")
-                                    .melt(id_vars=["Start_Feature", "End_Feature", "feature_type"], 
-                                          value_vars=["avg_5hmC_Nanopore", "avg_5hmC_TAB"])
-                                    .replace(["avg_5hmC_Nanopore", "avg_5hmC_TAB"], ["Nanopore", "TAB"]))
-        
-        barplot_df["feature_type"] = pd.Categorical(barplot_df.feature_type, categories, ordered=True)
-        return barplot_df
-    
-    barplot_feature = (prep_barplot(features_enrichment, ["Intergenic", "1kb promoter", "5UTR", "Intron", "Exon (coding)", "3UTR"])
-                     .replace(["Whole gene", "Exon (all)"], [None, None]))
-
-    barplot_cgi = prep_barplot(cgi_enrichment, ["Shelf", "Shore", "CGI"])
+                                                         ["Promoter", "Intron", "Exon", "Whole gene"], 
+                                                         ordered=True)
+    cgi_enrichment["feature_type"] = pd.Categorical(cgi_enrichment.feature_type, 
+                                                    ["Shelf", "Shore", "CGI"], 
+                                                    ordered=True)
     
     # Fig setup # 
 
     fig = plt.figure(figsize=(120/25.4, 100/25.4), 
                      dpi=600, 
                      layout="constrained")
-    gs = GridSpec(3, 6, fig)
+    gs = GridSpec(1, 6, fig)
 
     sns.set_style("ticks")
     mpl.rc('font', size=5)
 
-    ax0 = fig.add_subplot(gs[0, :4])
+    ax00 = fig.add_subplot(gs[0, :2])
+    ax01 = fig.add_subplot(gs[0, 2:4])
+    ax02 = fig.add_subplot(gs[0, 4:])
+    ax03 = fig.add_subplot(gs[0, :2])
 
-    sns.barplot(barplot_feature, x="feature_type", y="value", 
-                hue="variable", 
-                errorbar=("sd", 1), err_kws={"lw" : 0.8}, capsize=.25, 
-                palette="Greens", hue_order=["TAB", "Nanopore"],
-                ax=ax0)
-    del barplot_feature
-
-    ax0.set_ylim(0, 30)
-
-    ax0.set_xlabel(None)
-    ax0.set_ylabel("Mean feature 5hmC %")
-
-    sns.move_legend(ax0, "upper left", ncol=2, title=None, frameon=False)
-
-    ax1 = fig.add_subplot(gs[0, 4:])
-
-    sns.barplot(barplot_cgi, x="feature_type", y="value", 
-                hue="variable", 
-                errorbar=("sd", 1), err_kws={"lw" : 0.8}, capsize=.25,
-                palette="Greens", hue_order=["TAB", "Nanopore"],
-                ax=ax1)
-    del barplot_cgi
-
-    ax1.set_ylim(0, 30)
-
-    ax1.set_xlabel(None)
-    ax1.set_ylabel(None)
-
-    sns.move_legend(ax1, "upper right", ncol=2, title=None, frameon=False)
-
-    ax00 = fig.add_subplot(gs[1, :2])
-    ax01 = fig.add_subplot(gs[1, 2:4])
-    ax02 = fig.add_subplot(gs[1, 4:])
-
-    ax10 = fig.add_subplot(gs[2, :2])
-    ax11 = fig.add_subplot(gs[2, 2:4])
-    ax12 = fig.add_subplot(gs[2, 4:])
-
-    kde_plots = pd.concat([features_enrichment.groupby("feature_type").get_group(feature) for feature in ["Intron", "Exon (coding)", "Exon (all)", "Whole gene", "1kb promoter"]])
-    
     # Also interested to include CGI in this comparison
-    kde_plots = pd.concat([kde_plots, cgi_enrichment.groupby("feature_type").get_group("CGI")])
-
+    kde_plots = pd.concat([features_enrichment, cgi_enrichment])
     kde_features = kde_plots.groupby("feature_type")
 
-    for feature, ax in zip(["Whole gene", "Intron", "Exon (coding)", "Exon (all)", "1kb promoter", "CGI"], 
-                                [ax00, ax01, ax02, ax10, ax11, ax12]):
+    def kde_outer(feature, ax):
         df = kde_features.get_group(f"{feature}")
 
         plot_kde(df, ax)
         ax.axhline(0, ls=":", c="grey", lw=0.8)
         ax.axvline(0, ls=":", c="grey", lw=0.8)
 
-        ax.set_title(f"{feature}\nn={len(df)}, r={round(stats.pearsonr(df.enrichment_Nanopore, df.enrichment_TAB).statistic, 3)}")
+        stat = stats.spearmanr(df.enrichment_Nanopore, df.enrichment_TAB)
+        sign = "="
+        pval = round(stat.pvalue, 3)
+        if pval < 0.001:
+            pval = 0.001
+            sign = "<"
+
+        ax.set_title(f"{feature} (n={len(df)})\n\N{GREEK SMALL LETTER RHO}={round(stat.statistic, 3)}, p{sign}{round(pval, 3)}")
 
         ax.set_ylim((-6, 4))
         ax.set_xlim((-6, 4))
@@ -172,6 +160,25 @@ def fig_main(dryrun):
 
         ax.set_xticks(np.arange(-6, 4, 2))
         ax.set_yticks(np.arange(-6, 4, 2))
+        return print(f"Plotted {feature}.")
+    
+    kde_targets = ["Whole gene", "Intron", "CDS", "Exon (all)", "Promoter", "CGI"]
+    axes = [ax00, ax01, ax02, ax10, ax11, ax12]
+
+    with concurrent.futures.ThreadPoolExecutor(len(kde_targets)) as kde_executor:
+        kde_futures = [kde_executor.submit(kde_outer, feature, ax) for feature, ax in zip(kde_targets, axes)]
+        [kde_plot.result() for kde_plot in kde_futures]
+
+    print("Done plotting.")
+
+    def calculate_spearman(feature):
+        df = kde_features.get_group(feature)
+        stat = stats.spearmanr(df.enrichment_Nanopore, df.enrichment_TAB)
+        return [feature, round(stat.statistic, 3), round(stat.pvalue, 3)]
+
+    with concurrent.futures.ThreadPoolExecutor(len(kde_features.groups.keys())) as spearman_executor:
+        spearman = spearman_executor.map(calculate_spearman, kde_features.groups.keys()) 
+        [print(stat) for stat in spearman]       
 
     fig.supylabel("5hmC enrichment (Nanopore)", y=.35, x=0.01, ha="center", size=7)
     fig.supxlabel("5hmC enrichment (TAB-seq)", size=7)
@@ -182,11 +189,12 @@ def fig_main(dryrun):
     sns.despine()
 
     if dryrun:
-        outpath = "plots/tests/compare_features.png"
+        fig.savefig("plots/tests/compare_features.png") 
     else:
-        outpath = "plots/compare_features.png"
+        fig.savefig("plots/compare_features.png") 
+        fig.savefig("plots/compare_features.svg") 
 
-    return fig.savefig(outpath) 
+    return print("Completed")
 
 ##### main function ##### 
 
