@@ -56,8 +56,7 @@ def annotate_wrapper(df_list: list[pd.DataFrame], annotator: annotation_features
         grouped_all = pd.concat([df.assign(Replicate = i) 
                                  for i, df in enumerate(executor.map(group_feature, annotated_all))])
     
-    grouped_all = grouped_all.groupby(["Replicate", "feature_type"])
-
+    grouped_all = grouped_all.groupby(["Start_Feature", "End_Feature", "feature_type"])
     rep_summary = grouped_all.mean(numeric_only=True)
 
     return rep_summary
@@ -115,36 +114,55 @@ def fig_main(figsize, fontsize, dryrun=True):
                                for df_list in modbeds_list]
         feature_annotations = [future.result().assign(Method = method)
                                for future, method in zip(feature_annotations, ["Nanopore", "TAB", "oxBS"])]
-            
-    nanopore_tab = pd.concat(feature_annotations[:2]).reset_index().replace(
-        ["1kbPromoter", "allExons", "intron", "genes"], 
-        ["Promoter", "Exon", "Intron", "Genic"]
-    )
+
+    nanopore_annotated = (feature_annotations[0]
+                          .reset_index()
+                          .replace(["1kbPromoter", "allExons", "intron", "genes", "intergenic"],
+                                   ["Promoter", "Exon", "Intron", "Genic", "Intergenic"])
+                          .melt(id_vars=["Start_Feature", "End_Feature", "feature_type"], 
+                                value_vars=["enrichment_5mC", "enrichment_5hmC"],
+                                value_name="enrichment", var_name="Mod")
+                                .replace(["enrichment_5mC", "enrichment_5hmC"],
+                                         ["5mC", "5hmC"]))
+    
+    # nanopore_tab = pd.concat(feature_annotations[:2]).reset_index().replace(
+    #     ["1kbPromoter", "allExons", "intron", "genes"], 
+    #     ["Promoter", "Exon", "Intron", "Genic"]
+    # )
 
     # nanopore_oxbs = pd.concat([feature_annotations[0], feature_annotations[2]])
-    tickorder = ["Promoter", "5UTR", "Intron", "Exon", "3UTR", "Genic"]
+    tickorder = ["Promoter", "5UTR", "Intron", "Exon", "3UTR", "Genic", "Intergenic"]
     
-    other_fig = plt.figure(figsize=(16.73/2.54, 6.47/2.54), layout="constrained")
-    gs = other_fig.add_gridspec(1, 3)
-    ax4 = other_fig.add_subplot(gs[0, :2])
-    ax5 = other_fig.add_subplot(gs[0, 2])
+    #  other_fig = plt.figure(figsize=(18/2.54, 9/2.54), layout="constrained")
+    #  gs = other_fig.add_gridspec(1, 3)
+    # ax4 = other_fig.add_subplot(gs[0, :2])
+    # ax5 = other_fig.add_subplot(gs[0, 2])
 
     [ax.axhline(0, ls="--", c="grey", label="Genomic mean") for ax in [ax4, ax5]]
     
-    sns.barplot(nanopore_tab, 
-                x="feature_type", y="enrichment_5hmC",
-                hue="Method", palette="Blues",
-                errorbar=("sd", 1),
-                err_kws={'linewidth': 1}, capsize=.5,
+    # sns.barplot(nanopore_annotated, 
+    #             x="feature_type", y="enrichment",
+    #             hue="Mod", palette="GnBu",
+    #             hue_order=["5mC", "5hmC"],
+    #             errorbar=("ci", 95),
+    #             err_kws={'linewidth': 1}, capsize=.5,
+    #             order=tickorder,
+    #             ax=ax4)
+    
+    sns.boxplot(nanopore_annotated, 
+                x="feature_type", y="enrichment",
+                hue="Mod", palette="GnBu",
+                hue_order=["5mC", "5hmC"],
+                showfliers=False, 
                 order=tickorder,
                 ax=ax4)
     
-    feature_stats = nanopore_tab.groupby(["feature_type", "Method"])
-    for feature in tickorder:
-        nanopore = np.array(feature_stats.get_group((feature, "Nanopore"))["enrichment_5hmC"])
-        tab = np.array(feature_stats.get_group((feature, "TAB"))["enrichment_5hmC"])
+    # feature_stats = nanopore_tab.groupby(["feature_type", "Method"])
+    # for feature in tickorder:
+    #     nanopore = np.array(feature_stats.get_group((feature, "Nanopore"))["enrichment_5hmC"])
+    #     tab = np.array(feature_stats.get_group((feature, "TAB"))["enrichment_5hmC"])
 
-        print(feature, stats.ttest_ind(nanopore, tab, equal_var=False))
+    #    print(feature, stats.ttest_ind(nanopore, tab, equal_var=False))
 
     sns.move_legend(ax4, loc="lower right", frameon=False, title=None)
 
@@ -154,37 +172,54 @@ def fig_main(figsize, fontsize, dryrun=True):
         cgi_annotations = [future.result().assign(Method = method)
                            for future, method in zip(cgi_annotations, ["Nanopore", "TAB", "oxBS"])]
     
-    nanopore_tab = pd.concat(cgi_annotations[:2]).reset_index()
+    # nanopore_tab = pd.concat(cgi_annotations[:2]).reset_index()
     # nanopore_oxbs = pd.concat([cgi_annotations[0], cgi_annotations[2]])
+    nanopore_annotated = (cgi_annotations[0]
+                          .reset_index()
+                          .melt(id_vars=["Start_Feature", "End_Feature", "feature_type"],
+                                value_vars=["enrichment_5mC", "enrichment_5hmC"],
+                                value_name="enrichment", var_name="Mod")
+                                .replace(["enrichment_5mC", "enrichment_5hmC"], 
+                                         ["5mC", "5hmC"]))
+    
     tickorder = ["Shelf", "Shore", "CGI"]
 
-    sns.barplot(nanopore_tab, 
-                x="feature_type", y="enrichment_5hmC",
-                hue="Method", palette="Blues",
-                err_kws={'linewidth': 1}, capsize=.5,
-                errorbar=("sd", 1),
+    # sns.barplot(nanopore_annotated, 
+    #             x="feature_type", y="enrichment",
+    #             hue="Mod", palette="GnBu",
+    #             hue_order=["5mC", "5hmC"],
+    #             errorbar=("ci", 95),
+    #             err_kws={'linewidth': 1}, capsize=.5,
+    #             order=tickorder,
+    #             ax=ax5)
+    
+    sns.boxplot(nanopore_annotated, 
+                x="feature_type", y="enrichment",
+                hue="Mod", palette="GnBu",
+                hue_order=["5mC", "5hmC"],
+                showfliers=False, 
                 order=tickorder,
+                legend=False,
                 ax=ax5)
     
     [ax.set_xlabel(None) for ax in [ax4, ax5]]
     
-    feature_stats = nanopore_tab.groupby(["feature_type", "Method"])
-    for feature in tickorder:
-        nanopore = np.array(feature_stats.get_group((feature, "Nanopore"))["enrichment_5hmC"])
-        tab = np.array(feature_stats.get_group((feature, "TAB"))["enrichment_5hmC"])
+    # feature_stats = nanopore_tab.groupby(["feature_type", "Method"])
+    # for feature in tickorder:
+    #     nanopore = np.array(feature_stats.get_group((feature, "Nanopore"))["enrichment_5hmC"])
+    #     tab = np.array(feature_stats.get_group((feature, "TAB"))["enrichment_5hmC"])
 
-        print(feature, stats.ttest_ind(nanopore, tab, equal_var=False))
+    #     print(feature, stats.ttest_ind(nanopore, tab, equal_var=False))
 
-    sns.move_legend(ax5, loc="lower left", frameon=False, title=None)
+    # sns.move_legend(ax5, loc="lower left", frameon=False, title=None)
 
     ax4.set_ylabel(f"Log$_{2}$ FC vs. genomic mean")
-    ax4.set_ylim(-3.5, .5)
+    # ax4.set_ylim(-3.5, .5)
     ax5.set_ylabel(f"Log$_{2}$ FC vs. genomic mean")
-    ax5.set_ylim(-3, .5)
+    # ax5.set_ylim(-3, .5)
 
-    sns.despine(other_fig)
-    other_fig.savefig("plots/presentation_features.svg", dpi=600)
-    exit()
+    # sns.despine(other_fig)
+    # other_fig.savefig("plots/presentation_features.svg", dpi=600)
 
     with concurrent.futures.ProcessPoolExecutor(3) as merge_executor:
         merge_futures = [merge_executor.submit(merge_positions, modbed, True, col) 
@@ -262,12 +297,17 @@ def fig_main(figsize, fontsize, dryrun=True):
                 lw=0.8,
                 hue="Mod", palette="GnBu",
                 ax=ax3)
-    
+        
+    ax3.lines[0].set_linestyle("--")
+    h = ax3.legend_.legend_handles
+    h[1].set_ls("--")
+
     ax3.set_ylim((0, 0.1))
     ax3.set_xlim((-50, 50))
     ax3.set_xlabel("Bisulphite % - Nanopore %")
 
     sns.move_legend(ax3, "upper right", frameon=False, title=None)
+
     sns.despine()
 
     # other_fig.savefig("plots/presentation_cpg_compare.svg")
@@ -299,7 +339,7 @@ if __name__=="__main__":
     parser.add_argument("--figsize", 
                         dest="figsize", 
                         nargs=2,
-                        default=[89, 89],
+                        default=[120, 80],
                         required=False,
                         help="Size of the figure produced in mm: (w, h).") 
     parser.add_argument("--fontsize", 
