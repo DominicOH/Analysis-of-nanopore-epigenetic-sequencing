@@ -11,21 +11,21 @@ from sklearn import metrics
 from scipy import stats
 
 def annotate_wrapper(df_list: list[pd.DataFrame], annotator: annotation_features.Annotator):
-    readcount_tot = np.sum([df["readCount"].sum() for df in df_list])
-    hmc_tot = np.sum([df["N_5hmC"].sum() for df in df_list])
-
-    mean_value = (hmc_tot/readcount_tot)*100
-    
+    def calculate_zscore(annotated_df: pd.DataFrame):
+        annotated_df.eval("percentMeth_5hmC = (N_5hmC/readCount)*100", inplace=True)                
+        annotated_df["zscore_5hmC"] = stats.zscore(annotated_df["percentMeth_5hmC"])
+        return annotated_df   
+     
     def group_feature(annotated_df: pd.DataFrame):
         grouped = annotated_df.groupby(["Start_Feature", "End_Feature", "feature_type"], 
                                        observed=True, as_index=True)
+        
         features = grouped.sum(numeric_only=True)
         features["CpG_count"] = grouped["Start"].count()
 
         features = features.loc[features.eval("CpG_count > 9")]
+        features = calculate_zscore(features)
 
-        features.eval(f"percentMeth_5hmC = (N_5hmC/readCount)*100", inplace=True)
-        features[f"enrichment_5hmC"] = np.log2((features["percentMeth_5hmC"]+1)/(mean_value+1))
         return features
 
     with concurrent.futures.ThreadPoolExecutor(len(df_list)) as executor:
@@ -58,7 +58,7 @@ def calculate_stats(df):
     return out
 
 @timer
-def fig_main(dryrun, fontsize=5, figsize=None):
+def fig_main(dryrun, fontsize=5, height=89):
     # Loading data # 
     if dryrun:
         nano_path = "data/dryruns/modbeds/nanopore/"
@@ -80,6 +80,7 @@ def fig_main(dryrun, fontsize=5, figsize=None):
     # Data processing # 
 
     feature_annotator = annotation_features.Annotator("/mnt/data1/doh28/analyses/mouse_hydroxymethylome_analysis/feature_references/feature_comparison/")
+    cgi_annotator = annotation_features.Annotator("/mnt/data1/doh28/analyses/mouse_hydroxymethylome_analysis/feature_references/cgi/")
 
     with concurrent.futures.ThreadPoolExecutor(2) as annotation_executor:
         annotated_data = annotation_executor.map(lambda df: annotate_wrapper(df, feature_annotator), modbeds_list)
@@ -93,29 +94,23 @@ def fig_main(dryrun, fontsize=5, figsize=None):
                                     suffixes=["_Nanopore", "_TAB"])
                                     .reset_index()
                                     .replace(["intron", "allExons", "genes", "1kbPromoter"],
-                                             ["Intron", "Exon", "Genic", "Promoter"]
+                                             ["Intron", "Exon", "Gene body", "Promoter"]
                                              ))
-    
-    print(features_enrichment.groupby("feature_type").mean())
-    
+        
     # Fig setup # 
     
     sns.set_style("ticks")
     mpl.rc('font', size=fontsize)
 
-    if figsize:
-        figsize = float(figsize)/25.4
-    else:
-        figsize = 3
-
     fg = sns.FacetGrid(features_enrichment, col="feature_type", 
                        hue="feature_type", palette="PuBuGn",
-                       col_wrap=2, col_order=["Intron", "Exon", "Genic", "Promoter"],
-                       height=figsize)
+                       col_wrap=3, col_order=["Gene body", "Promoter", "5UTR", "Intron", "Exon", "3UTR"],
+                       height=height/25.4,
+                       xlim=(-4, 4), ylim=(-4, 4))
     
     fg.map_dataframe(sns.kdeplot, 
-                     x="enrichment_5hmC_TAB", 
-                     y="enrichment_5hmC_Nanopore",
+                     x="zscore_5hmC_TAB", 
+                     y="zscore_5hmC_Nanopore",
                      fill=True)
     
     fg.set_xlabels("")
@@ -126,15 +121,15 @@ def fig_main(dryrun, fontsize=5, figsize=None):
 
     fg.set_titles("{col_name}")
 
-    fg.figure.supxlabel(f"Log$_{2}$ FC from mean (TAB)", y=-.05)
-    fg.figure.supylabel(f"Log$_{2}$ FC from mean (Nanopore)", x=-.05)
+    fg.figure.supxlabel(f"Site modification (%) Z-Score (TAB)", y=-.01)
+    fg.figure.supylabel(f"Site modification (%) Z-Score (Nanopore)", x=-.01)
 
-    for feature in ["Intron", "Exon", "Genic", "Promoter"]:
+    for feature in ["Intron", "Exon", "Gene body", "Promoter"]:
         ax = fg.axes_dict[feature]
 
         test_df = features_enrichment.query(f"feature_type == '{feature}'")
-        stat = stats.spearmanr(test_df["enrichment_5hmC_TAB"], 
-                               test_df["enrichment_5hmC_Nanopore"])
+        stat = stats.spearmanr(test_df["zscore_5hmC_TAB"], 
+                               test_df["zscore_5hmC_Nanopore"])
         print(feature, stat.pvalue)
         
         if stat.pvalue < 0.001:
@@ -145,12 +140,7 @@ def fig_main(dryrun, fontsize=5, figsize=None):
             star = "*"
         
         ax.annotate(f"$\\rho$={round(stat.statistic, 3)}$^{{{star}}}$", 
-                    xy=(-3.5, 2))
-
-    # def calculate_spearman(feature):
-    #     df = kde_features.get_group(feature)
-    #     stat = stats.spearmanr(df.enrichment_Nanopore, df.enrichment_TAB)
-    #     return [feature, round(stat.statistic, 3), round(stat.pvalue, 3)]
+                    xy=(-3, 3))
 
     if dryrun:
         fg.savefig("plots/tests/compare_features.png", dpi=600) 
@@ -172,9 +162,9 @@ if __name__=="__main__":
                         default=False,
                         required=False,
                         help="Whether a test output is produced.") 
-    parser.add_argument("--figsize", 
-                        dest="figsize", 
-                        default=None,
+    parser.add_argument("--height", 
+                        dest="height", 
+                        default=89,
                         required=False,
                         help="Size of the figure produced in mm") 
     parser.add_argument("--fontsize", 
@@ -185,4 +175,4 @@ if __name__=="__main__":
 
     args = parser.parse_args()
 
-    fig_main(args.dryrun, args.fontsize, args.figsize)
+    fig_main(args.dryrun, args.fontsize, args.height)
