@@ -18,45 +18,51 @@ def prep_dev_plot(df, bs_method, mod):
             .assign(Mod = mod))
     return df
 
-def annotate_wrapper(df_list: list[pd.DataFrame], annotator: annotation_features.Annotator):
+def print_means(df_list):
     mean_dict = {}
     for col in ["5mC", "5hmC"]:
         try:
-            readcount_tot = np.sum([df["readCount"].sum() for df in df_list])
-            total = np.sum([df[f"N_{col}"].sum() for df in df_list])
-            mean_value = (total/readcount_tot)*100
+            readcount_tot = [df["readCount"].sum() for df in df_list]
+            total_mods = [df[f"N_{col}"].sum() for df in df_list]
+            mean_value = np.mean(np.divide(total_mods, readcount_tot))*100
 
             mean_dict.update({col : mean_value})
         except:
             # print(col, "not found in", df_list[0].columns)
             pass
+    return mean_dict
 
-    def group_feature(annotated_df: pd.DataFrame):
-        grouped = annotated_df.groupby(["Start_Feature", "End_Feature", "feature_type"], 
-                                       observed=True, as_index=True)
-        
-        features = grouped.sum(numeric_only=True)
-        features["CpG_count"] = grouped["Start"].count()
-        features = features.loc[features.eval("CpG_count > 9")]
-
+def annotate_wrapper(df_list: list[pd.DataFrame], annotator: annotation_features.Annotator):
+    
+    def calculate_zscore(annotated_df: pd.DataFrame):
         for col in ["5mC", "5hmC"]:
-            try:
-                features.eval(f"percentMeth_{col} = (N_{col}/readCount)*100", inplace=True)
-                features[f"enrichment_{col}"] = np.log2((features[f"percentMeth_{col}"]+1)/(mean_dict[col]+1))
-            except:
-                pass    
-        return features
+            annotated_df.eval(f"percentMeth_{col} = (N_{col}/readCount)*100", inplace=True)                
+            # annotated_df[f"zscore_{col}"] = np.log2((annotated_df[f"percentMeth_{col}"]+epsilons[col])/(mean_dict[col]+epsilons[col]))
+            annotated_df[f"zscore_{col}"] = stats.zscore(annotated_df[f"percentMeth_{col}"])
+        return annotated_df
+
+    # def group_feature(annotated_df: pd.DataFrame):
+    #     grouped = annotated_df.groupby(["Start_Feature", "End_Feature", "feature_type"], 
+    #                                    observed=True, as_index=True)
+        
+    #     features = grouped.sum(numeric_only=True)
+    #     features["CpG_count"] = grouped["Start"].count()
+    #     features = features.loc[features.eval("CpG_count > 9")]
+
+    #     features = calculate_zscore(features)    
+    #     return features
 
     with concurrent.futures.ThreadPoolExecutor(len(df_list)) as executor:
         annotated_all = executor.map(annotator.annotate, df_list)
         annotated_all = [(annotation.drop(columns=["Strand"], errors="ignore")) 
                          for annotation in annotated_all]
-            
+        
     with concurrent.futures.ThreadPoolExecutor(len(df_list)) as executor:
         grouped_all = pd.concat([df.assign(Replicate = i) 
-                                 for i, df in enumerate(executor.map(group_feature, annotated_all))])
+                                 for i, df in enumerate(executor.map(calculate_zscore, annotated_all))])
     
-    grouped_all = grouped_all.groupby(["Start_Feature", "End_Feature", "feature_type"])
+    grouped_all = grouped_all.groupby(["Chromosome", "Start", "End", "feature_type"], 
+                                      observed=True)
     rep_summary = grouped_all.mean(numeric_only=True)
 
     return rep_summary
@@ -109,20 +115,20 @@ def fig_main(figsize, fontsize, dryrun=True):
 
     # feature annotation 
 
-    with concurrent.futures.ProcessPoolExecutor(3) as annotation_executor:
-        feature_annotations = [annotation_executor.submit(annotate_wrapper, df_list, feature_annotator) 
-                               for df_list in modbeds_list]
-        feature_annotations = [future.result().assign(Method = method)
-                               for future, method in zip(feature_annotations, ["Nanopore", "TAB", "oxBS"])]
+    # with concurrent.futures.ProcessPoolExecutor(3) as annotation_executor:
+    #     feature_annotations = [annotation_executor.submit(annotate_wrapper, df_list, feature_annotator) 
+    #                            for df_list in modbeds_list]
+    #     feature_annotations = [future.result().assign(Method = method)
+    #                            for future, method in zip(feature_annotations, ["Nanopore", "TAB", "oxBS"])]
 
-    nanopore_annotated = (feature_annotations[0]
+    nanopore_annotated = (annotate_wrapper(modbeds_list[0], feature_annotator)
                           .reset_index()
                           .replace(["1kbPromoter", "allExons", "intron", "genes", "intergenic"],
                                    ["Promoter", "Exon", "Intron", "Genic", "Intergenic"])
                           .melt(id_vars=["Start_Feature", "End_Feature", "feature_type"], 
-                                value_vars=["enrichment_5mC", "enrichment_5hmC"],
-                                value_name="enrichment", var_name="Mod")
-                                .replace(["enrichment_5mC", "enrichment_5hmC"],
+                                value_vars=["zscore_5mC", "zscore_5hmC"],
+                                value_name="zscore", var_name="Mod")
+                                .replace(["zscore_5mC", "zscore_5hmC"],
                                          ["5mC", "5hmC"]))
     
     # nanopore_tab = pd.concat(feature_annotations[:2]).reset_index().replace(
@@ -138,10 +144,10 @@ def fig_main(figsize, fontsize, dryrun=True):
     # ax4 = other_fig.add_subplot(gs[0, :2])
     # ax5 = other_fig.add_subplot(gs[0, 2])
 
-    [ax.axhline(0, ls="--", c="grey", label="Genomic mean") for ax in [ax4, ax5]]
+    [ax.axhline(0, ls=":", c="grey", label="Genomic mean") for ax in [ax4, ax5]]
     
     # sns.barplot(nanopore_annotated, 
-    #             x="feature_type", y="enrichment",
+    #             x="feature_type", y="zscore",
     #             hue="Mod", palette="GnBu",
     #             hue_order=["5mC", "5hmC"],
     #             errorbar=("ci", 95),
@@ -149,74 +155,78 @@ def fig_main(figsize, fontsize, dryrun=True):
     #             order=tickorder,
     #             ax=ax4)
     
-    sns.boxplot(nanopore_annotated, 
-                x="feature_type", y="enrichment",
-                hue="Mod", palette="GnBu",
+    # sns.boxplot(nanopore_annotated, 
+    #             x="feature_type", y="zscore",
+    #             hue="Mod", palette="GnBu",
+    #             hue_order=["5mC", "5hmC"],
+    #             showfliers=False, 
+    #             order=tickorder,
+    #             ax=ax4)   
+
+    nanopore_annotated["feature_type"] = pd.Categorical(nanopore_annotated["feature_type"],
+                                                        categories=tickorder,
+                                                        ordered=True)
+
+    sns.lineplot(nanopore_annotated, 
+                x="feature_type", y="zscore",
+                hue="Mod", style="Mod", palette="GnBu",
                 hue_order=["5mC", "5hmC"],
-                showfliers=False, 
-                order=tickorder,
                 ax=ax4)
-    
+
     # feature_stats = nanopore_tab.groupby(["feature_type", "Method"])
     # for feature in tickorder:
-    #     nanopore = np.array(feature_stats.get_group((feature, "Nanopore"))["enrichment_5hmC"])
-    #     tab = np.array(feature_stats.get_group((feature, "TAB"))["enrichment_5hmC"])
+    #     nanopore = np.array(feature_stats.get_group((feature, "Nanopore"))["zscore_5hmC"])
+    #     tab = np.array(feature_stats.get_group((feature, "TAB"))["zscore_5hmC"])
 
     #    print(feature, stats.ttest_ind(nanopore, tab, equal_var=False))
 
-    sns.move_legend(ax4, loc="lower right", frameon=False, title=None)
+    sns.move_legend(ax4, loc="lower center", 
+                    frameon=False, title=None, 
+                    ncols=3, bbox_to_anchor=(.5, 1))
 
-    with concurrent.futures.ProcessPoolExecutor(3) as annotation_executor:
-        cgi_annotations = [annotation_executor.submit(annotate_wrapper, df_list, cgi_annotator) 
-                               for df_list in modbeds_list]
-        cgi_annotations = [future.result().assign(Method = method)
-                           for future, method in zip(cgi_annotations, ["Nanopore", "TAB", "oxBS"])]
+    # with concurrent.futures.ProcessPoolExecutor(3) as annotation_executor:
+    #     cgi_annotations = [annotation_executor.submit(annotate_wrapper, df_list, cgi_annotator) 
+    #                            for df_list in modbeds_list]
+    #     cgi_annotations = [future.result().assign(Method = method)
+    #                        for future, method in zip(cgi_annotations, ["Nanopore", "TAB", "oxBS"])]
     
     # nanopore_tab = pd.concat(cgi_annotations[:2]).reset_index()
     # nanopore_oxbs = pd.concat([cgi_annotations[0], cgi_annotations[2]])
-    nanopore_annotated = (cgi_annotations[0]
+    
+    nanopore_annotated = (annotate_wrapper(modbeds_list[0], cgi_annotator)
                           .reset_index()
+                          .replace(["OpenSea"], ["Sea"])
                           .melt(id_vars=["Start_Feature", "End_Feature", "feature_type"],
-                                value_vars=["enrichment_5mC", "enrichment_5hmC"],
-                                value_name="enrichment", var_name="Mod")
-                                .replace(["enrichment_5mC", "enrichment_5hmC"], 
+                                value_vars=["zscore_5mC", "zscore_5hmC"],
+                                value_name="zscore", var_name="Mod")
+                                .replace(["zscore_5mC", "zscore_5hmC"], 
                                          ["5mC", "5hmC"]))
     
-    tickorder = ["Shelf", "Shore", "CGI"]
+    tickorder = ["Sea", "Shelf", "Shore", "CGI"]
 
-    # sns.barplot(nanopore_annotated, 
-    #             x="feature_type", y="enrichment",
-    #             hue="Mod", palette="GnBu",
-    #             hue_order=["5mC", "5hmC"],
-    #             errorbar=("ci", 95),
-    #             err_kws={'linewidth': 1}, capsize=.5,
-    #             order=tickorder,
-    #             ax=ax5)
+    nanopore_annotated["feature_type"] = pd.Categorical(nanopore_annotated["feature_type"],
+                                                        categories=tickorder,
+                                                        ordered=True)
     
-    sns.boxplot(nanopore_annotated, 
-                x="feature_type", y="enrichment",
-                hue="Mod", palette="GnBu",
-                hue_order=["5mC", "5hmC"],
-                showfliers=False, 
-                order=tickorder,
-                legend=False,
+    sns.lineplot(nanopore_annotated, 
+                x="feature_type", y="zscore",
+                hue="Mod", style="Mod", palette="GnBu",
+                hue_order=["5mC", "5hmC"], legend=False,
                 ax=ax5)
     
     [ax.set_xlabel(None) for ax in [ax4, ax5]]
     
     # feature_stats = nanopore_tab.groupby(["feature_type", "Method"])
     # for feature in tickorder:
-    #     nanopore = np.array(feature_stats.get_group((feature, "Nanopore"))["enrichment_5hmC"])
-    #     tab = np.array(feature_stats.get_group((feature, "TAB"))["enrichment_5hmC"])
+    #     nanopore = np.array(feature_stats.get_group((feature, "Nanopore"))["zscore_5hmC"])
+    #     tab = np.array(feature_stats.get_group((feature, "TAB"))["zscore_5hmC"])
 
     #     print(feature, stats.ttest_ind(nanopore, tab, equal_var=False))
 
     # sns.move_legend(ax5, loc="lower left", frameon=False, title=None)
 
-    ax4.set_ylabel(f"Log$_{2}$ FC vs. genomic mean")
-    # ax4.set_ylim(-3.5, .5)
-    ax5.set_ylabel(f"Log$_{2}$ FC vs. genomic mean")
-    # ax5.set_ylim(-3, .5)
+    ax4.set_ylabel("Site modification (%) Z-Score")
+    ax5.set_ylabel("Site modification (%) Z-Score")
 
     # sns.despine(other_fig)
     # other_fig.savefig("plots/presentation_features.svg", dpi=600)
@@ -256,17 +266,13 @@ def fig_main(figsize, fontsize, dryrun=True):
 
     ax1.set_title(f"5mC", loc="center")
     ax2.set_title(f"5hmC", loc="center")
-    
-    # for average in [nanopore_average, ox_average]:
-    #     len(average.query("percentMeth_5mC > 0"))/len(average)
 
-    nano_oxbs = pd.concat([nanopore_average, ox_average], join="inner", copy=False).pivot_table(values="percentMeth_5mC", index=["Chromosome", "Start", "End"], columns="Method").dropna()
+    nano_oxbs = (pd.concat([nanopore_average, ox_average], join="inner", copy=False)
+                 .pivot_table(values="percentMeth_5mC", index=["Chromosome", "Start", "End"], columns="Method").dropna())
     del ox_average
-    
-    # for average in [nanopore_average, tab_average]:
-    #     len(average.query("percentMeth_5hmC > 0"))/len(average)
 
-    nano_tab = pd.concat([nanopore_average, tab_average], join="inner", copy=False).pivot_table(values="percentMeth_5hmC", index=["Chromosome", "Start", "End"], columns="Method").dropna()
+    nano_tab = (pd.concat([nanopore_average, tab_average], join="inner", copy=False)
+                .pivot_table(values="percentMeth_5hmC", index=["Chromosome", "Start", "End"], columns="Method").dropna())
     del tab_average, nanopore_average
 
     gc.collect()
@@ -276,7 +282,6 @@ def fig_main(figsize, fontsize, dryrun=True):
         ax.set_ylim(0, 1)
         ax.set_xlim(0, 100)
         ax.set_ylabel("Cumulative proportion")
-        # ax.get_legend().set_in_layout(False)
 
     sns.move_legend(ax1, "upper left", frameon=False)
     sns.move_legend(ax2, "lower right", frameon=False)
