@@ -58,7 +58,7 @@ def calculate_stats(df):
     return out
 
 @timer
-def fig_main(dryrun, fontsize=5, height=89):
+def fig_main(dryrun, fontsize=5):
     # Loading data # 
     if dryrun:
         nano_path = "data/dryruns/modbeds/nanopore/"
@@ -80,7 +80,7 @@ def fig_main(dryrun, fontsize=5, height=89):
     # Data processing # 
 
     feature_annotator = annotation_features.Annotator("/mnt/data1/doh28/analyses/mouse_hydroxymethylome_analysis/feature_references/feature_comparison/")
-    cgi_annotator = annotation_features.Annotator("/mnt/data1/doh28/analyses/mouse_hydroxymethylome_analysis/feature_references/cgi/")
+    # cgi_annotator = annotation_features.Annotator("/mnt/data1/doh28/analyses/mouse_hydroxymethylome_analysis/feature_references/cgi/")
 
     with concurrent.futures.ThreadPoolExecutor(2) as annotation_executor:
         annotated_data = annotation_executor.map(lambda df: annotate_wrapper(df, feature_annotator), modbeds_list)
@@ -102,11 +102,14 @@ def fig_main(dryrun, fontsize=5, height=89):
     sns.set_style("ticks")
     mpl.rc('font', size=fontsize)
 
+
     fg = sns.FacetGrid(features_enrichment, col="feature_type", 
                        hue="feature_type", palette="PuBuGn",
                        col_wrap=3, col_order=["Gene body", "Promoter", "5UTR", "Intron", "Exon", "3UTR"],
-                       height=height/25.4,
-                       xlim=(-4, 4), ylim=(-4, 4))
+                       xlim=(-3, 4), ylim=(-3, 4))
+    
+    fg.figure.set_size_inches(180/25.4, 120/25.4)
+    fg.figure.set_constrained_layout(True)
     
     fg.map_dataframe(sns.kdeplot, 
                      x="zscore_5hmC_TAB", 
@@ -124,7 +127,7 @@ def fig_main(dryrun, fontsize=5, height=89):
     fg.figure.supxlabel(f"Site modification (%) Z-Score (TAB)", y=-.01)
     fg.figure.supylabel(f"Site modification (%) Z-Score (Nanopore)", x=-.01)
 
-    for feature in ["Intron", "Exon", "Gene body", "Promoter"]:
+    for feature in ["Intron", "Exon", "Gene body", "Promoter", "5UTR", "3UTR"]:
         ax = fg.axes_dict[feature]
 
         test_df = features_enrichment.query(f"feature_type == '{feature}'")
@@ -140,7 +143,7 @@ def fig_main(dryrun, fontsize=5, height=89):
             star = "*"
         
         ax.annotate(f"$\\rho$={round(stat.statistic, 3)}$^{{{star}}}$", 
-                    xy=(-3, 3))
+                    xy=(-2, 3))
 
     if dryrun:
         fg.savefig("plots/tests/compare_features.png", dpi=600) 
@@ -162,11 +165,6 @@ if __name__=="__main__":
                         default=False,
                         required=False,
                         help="Whether a test output is produced.") 
-    parser.add_argument("--height", 
-                        dest="height", 
-                        default=89,
-                        required=False,
-                        help="Size of the figure produced in mm") 
     parser.add_argument("--fontsize", 
                         dest="fontsize", 
                         default=5,
@@ -175,4 +173,4 @@ if __name__=="__main__":
 
     args = parser.parse_args()
 
-    fig_main(args.dryrun, args.fontsize, args.height)
+    fig_main(args.dryrun, args.fontsize)
