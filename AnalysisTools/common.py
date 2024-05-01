@@ -134,10 +134,18 @@ def fetch_controls(usecols, dryrun=True):
         zymo_u1 = root_path + "zymo_unmodified_rep1.modbed"
         zymo_u2 = root_path + "zymo_unmodified_rep2.modbed"
 
-    pos_controls = map(lambda path: read_table(path, usecols).rename(columns={"N_mC" : "N_5mC", "N_hmC" : "N_5hmC"}), [zymo_m1, zymo_m2])
-    neg_controls = map(lambda path: read_table(path, usecols).rename(columns={"N_mC" : "N_5mC", "N_hmC" : "N_5hmC"}), [zymo_u1, zymo_u2])
+    paths = [zymo_m1, zymo_m2, zymo_u1, zymo_u2]
 
-    return pos_controls, neg_controls
+    with concurrent.futures.ProcessPoolExecutor(4) as ppe:
+        futures = [ppe.submit(read_table, path, usecols) for path in paths]
+        ctrl_dfs = [future.result() for future in futures]
+
+        [df.rename(columns={"N_mC" : "N_5mC", "N_hmC" : "N_5hmC"}, inplace=True) for df in ctrl_dfs]
+
+        pos_ctrls = ctrl_dfs[:2]
+        neg_ctrls = ctrl_dfs[2:]
+
+    return pos_ctrls, neg_ctrls
 
 def calculate_percentages(df, cols):
     if type(cols) == list:
@@ -149,7 +157,9 @@ def calculate_percentages(df, cols):
     return df
 
 def merge_positions(dfs, calculate_percentage=False, cols=None, drop=None):
-    merged = pd.concat(dfs).groupby(["Chromosome", "Start", "End"]).sum(numeric_only=True)
+    merged = (pd.concat(dfs)
+              .groupby(["Chromosome", "Start", "End"], observed=False, as_index=False, sort=False)
+              .sum(numeric_only=True))
 
     # Replace with two functions/methods that do this
     if calculate_percentage:
