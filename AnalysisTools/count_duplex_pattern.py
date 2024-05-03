@@ -3,13 +3,17 @@ import pandas as pd
 import concurrent.futures
 import os
 from helpers import timer
+from pandas.errors import ParserError
 
 def count_patterns(path):
     print(f"Reading patterns in {path}...")
-    pattern_df = pd.read_table(path, sep="\t", 
-                            names=["Chromosome", "Start", "End", "Pattern", "readCount", "D0", "D1", "D2", "D3", "D4", "percentPattern", "N_Pattern", "N_Canonical", "N_Other", "D5", "D6", "D7", "D8"],
-                            usecols=["Chromosome", "Start", "End", "Pattern", "readCount", "N_Pattern"])
-    
+    try:
+        pattern_df = pd.read_table(path, sep="\t", 
+                                names=["Chromosome", "Start", "End", "Pattern", "readCount", "D0", "D1", "D2", "D3", "D4", "percentPattern", "N_Pattern", "N_Canonical", "N_Other", "D5", "D6", "D7", "D8"],
+                                usecols=["Chromosome", "Start", "End", "Pattern", "readCount", "N_Pattern"])
+    except ParserError:
+        print("Reading failed due to unexpected input. Check that pileup-hemi was run with --only-tabs")
+
     pattern_count = pattern_df.groupby("Pattern")["N_Pattern"].sum().reset_index()
 
     outpath = outdir + os.path.basename(path) + ".duplex_patterns.tsv"
@@ -30,8 +34,8 @@ def main(paths):
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser(
-                        prog = "count_reads_dx",
-                        description = "Reads one or more hemi-pileup files and tallies CpG modification states.")
+                        prog = "count_duplex_patterns",
+                        description = "Reads one or more hemi-pileup files and tallies CpG modification states.\nImportant: Must be used on pileup-hemi outputs run with --only-tabs")
     parser.add_argument("filenames", nargs="+")
     parser.add_argument("-o ", "--outdir", type=str, required=False) 
 
