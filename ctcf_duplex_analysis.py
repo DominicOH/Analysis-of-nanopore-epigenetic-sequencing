@@ -52,6 +52,14 @@ class PatternFrame:
     def __init__(self, pattern_df):
         self.pattern_df = pattern_df
         self.ctcf_patterns = ctcf_intersect(pattern_df)
+    
+    def merge_all_patterns(self, min_depth):
+        df = (self.pattern_df
+              .query(f"readCount > {min_depth}"))
+        
+        df = df.assign(Majority = lambda r: r.loc[:, ("CC", "MM", "HH", "CM" , "MC" , "HC" , "CH" , "MH" , "HM")].idxmax(axis=1))
+
+        return MergedSites(df, min_depth)
 
     def merge_ctcf_patterns(self, min_depth):
         df = (self.ctcf_patterns
@@ -65,15 +73,15 @@ class PatternFrame:
            
     def piechart_data(self):
         """
-        Outputs a dataframe counting all homo-modification states. Hetero- and hemi-modification states are grouped. 
+        Outputs a dataframe counting all constutive-modification states. Hetero- and hemi-modification states are grouped. 
         """
         df = self.ctcf_patterns
         
         pie_data = pd.DataFrame({
-            "Pattern" : ["Homo-C", "Homo-5mC", "Homo-5hmC", "Hemi-dyad", "Hetero-dyad"],
+            "Pattern" : ["C", "5mC", "5hmC", "Hemi-dyad", "Hetero-dyad"],
             "Count" : [df["CC"].sum(), df["MM"].sum(), df["HH"].sum(), 
-                    df["MC"].sum() + df["CM"].sum() + df["HC"].sum() + df["CH"].sum(),
-                    df["MH"].sum() + df["HM"].sum()]
+                       df["MC"].sum() + df["CM"].sum() + df["HC"].sum() + df["CH"].sum(),
+                       df["MH"].sum() + df["HM"].sum()]
             })
 
         return pie_data
@@ -85,7 +93,7 @@ class MergedSites(PatternFrame):
 
     def piechart_data(self):
         """
-        Outputs a dataframe counting all homo-modification states. Hetero- and hemi-modification states are grouped. 
+        Outputs a dataframe counting all constitutive-modification states. Hetero- and hemi-modification states are grouped. 
         """
         df = self.pattern_df
         pie_data = df["Majority"].value_counts(normalize=True)
@@ -191,11 +199,23 @@ ctcf_motif = pr.PyRanges(pd.read_table("feature_references/CTCF_mm39_jaspar_sort
                                        skiprows=1), 
                                        int64=True).merge()
 
+print(len(ctcf_motif), "CTCF motifs")
+
+ctcf_summits = pr.PyRanges(pd.read_table("data/ctcf/ChIP2MACS2/MACS2/ENCSR000CBN_summits.bed", 
+                                         names=["Chromosome", "Start", "End", "Name", "Score"]),
+                           int64=True).merge()
+
+print(len(ctcf_summits), "CTCF summits")
+
 # removal of overlapping binding sites to prevent duplication downstream 
 # binding site with least qValue chosen
 with warnings.catch_warnings():
     warnings.simplefilter("ignore", FutureWarning)
-    chip_merge = pr.PyRanges(ctcf_motif.join(ctcf_chip, apply_strand_suffix=False, suffix="_Peak")
+    # will find the intersect of sites that are present on CTCF motifs, 
+    # that overlap with summits from confident peaks
+    chip_merge = pr.PyRanges(ctcf_motif
+                             .join(ctcf_summits, apply_strand_suffix=False, suffix="_Summit")
+                             .join(ctcf_chip, apply_strand_suffix=False, suffix="_Peak")
                              .as_df()
                              .sort_values("qValue", ascending=True)
                              .groupby(["Chromosome", "Start", "End"])
@@ -203,16 +223,22 @@ with warnings.catch_warnings():
                              .reset_index(drop=True),
                              int64=True)
     
+print(len(chip_merge), "CTCF motifs that overlap summits and peaks")
+    
 def ctcf_intersect(df, **intersect_kwargs):
-        # Loading JASPAR CTCF binding sites 
-        intersect = pr.PyRanges(df, int64=True).intersect(chip_merge, strandedness=False, **intersect_kwargs).as_df()
+    """
+    Note that this joins with CTCF summits. 
+    """
+    # Loading JASPAR CTCF binding sites 
+    intersect = pr.PyRanges(df, int64=True).intersect(chip_merge, strandedness=False, **intersect_kwargs).as_df()
 
-        assert intersect.loc[:, ("Chromosome", "Start", "End")].duplicated().all() == False
+    assert intersect.loc[:, ("Chromosome", "Start", "End")].duplicated().all() == False
         
-        return intersect
+    return intersect
 
 @timer
-def main(test_run=True, min_depth=5):
+def main(test_run=True, min_depth=5, upset_plot=False):
+
     root_path = "data/duplex_data/"
     files = ["cbm2/CBM_2_rep1.masked.bed", "cbm2/CBM_2_rep2.masked.bed",
              "cbm3/CBM_3_rep1.sorted.bam.bed", "cbm3/CBM_3_rep2.sorted.bam.bed"]
@@ -225,6 +251,60 @@ def main(test_run=True, min_depth=5):
         merged_patterns = [pf.merge_ctcf_patterns(min_depth) for pf in all_duplex_modbeds]
 
     fig = plt.figure(figsize=(120/25.4, 89/25.4), dpi=600, layout="constrained")
+
+    all_duplex_pfs = pd.concat([modbed.pattern_df for modbed in all_duplex_modbeds])
+    
+    # All patterns at CTCF motifs
+    all_motif_patterns = PatternFrame(
+        pr.PyRanges(all_duplex_pfs, int64=True).intersect(ctcf_motif)
+        .as_df().groupby(["Chromosome", "Start", "End"], as_index=True, observed=True)
+        .sum(numeric_only=True)
+        .reset_index()
+        ).merge_all_patterns(min_depth)
+        
+    # Gives the background or expected patterns based on CTCF overlapping sites
+    
+    exp_patterns = (pr.PyRanges(all_motif_patterns.pattern_df, int64=True)
+                .join(ctcf_motif, suffix="_Motif", apply_strand_suffix=True)
+                .as_df())["Majority"].value_counts(normalize=True)
+
+    # All patterns at CTCF motifs that overlap peak summits
+    ctcf_summit_patterns =  all_motif_patterns.ctcf_patterns
+
+    # observed duplex state at motifs overlapping peak summits
+    obs_patterns = ctcf_summit_patterns["Majority"].value_counts()
+
+    obs = obs_patterns.to_numpy()
+    obs_sum = obs.sum()
+
+    exp = exp_patterns.mul(obs_sum)
+    print("Expected patterns at CTCF motifs:\n", exp)
+    print("Observed patterns at CTCF motifs:\n", obs)
+
+    df_l = []
+    for df, kind in zip([exp, obs_patterns], ["Expected", "Observed"]):
+        df = df.reset_index(name="Count").assign(Kind = kind)
+        df_l.append(df)
+    
+    print(stats.chisquare(obs_patterns, exp))
+    
+    # fig = plt.figure(dpi=600, figsize=(14.71/2.54, 8/2.54), 
+    #                  layout="constrained")
+    # ax=fig.add_subplot()
+# 
+    # sns.barplot(pd.concat(df_l),
+    #             x="index", y="Count",
+    #             hue="Kind", hue_order=["Expected", "Observed"], 
+    #             palette="BuGn",
+    #             ax=ax)
+    # ax.set_xlabel(None)
+    # ax.set_ylabel("CpG sites at CTCF peaks")
+    # 
+    # sns.move_legend(ax, "upper right", frameon=False, title=None)
+    # sns.despine()
+
+    # fig.savefig("plots/presentation_ctcf.svg", 
+    #             transparent=True)
 
     sns.set_style("ticks")
     mpl.rc('font', size=5)
@@ -253,7 +333,7 @@ def main(test_run=True, min_depth=5):
                 .mean(numeric_only=True)
                 .reset_index()
                 .replace(["CC", "MM", "HH", "Hetero", "Hemi"], 
-                         ["Homo-C", "Homo-M", "Homo-H", "Hetero-dyad", "Hemi-dyad"]))
+                         ["C", "M", "H", "Hetero-dyad", "Hemi-dyad"]))
     
     ax1.pie(pie_data["Proportion"], 
             labels=pie_data["index"], 
@@ -386,34 +466,37 @@ def main(test_run=True, min_depth=5):
     # bbox = ax3.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
     # uw, uh = bbox.width, bbox.height
 
-    ctcf_concat = pd.concat([patternframe.ctcf_patterns for patternframe in all_duplex_modbeds])
-    ctcf_upset_mshp = upsetplot.from_memberships(memberships=[
-        ["C"], 
-        ["5mC"],
-        ["C", "5mC"],
-        ["5hmC"],
-        ["5mC", "5hmC"],
-        ["C", "5hmC"]],
-        data = [
-            ctcf_concat["CC"].sum(), 
-            ctcf_concat["MM"].sum(), 
-            ctcf_concat["CM"].sum() + ctcf_concat["MC"].sum(), 
-            ctcf_concat["HH"].sum(), 
-            ctcf_concat["HM"].sum() + ctcf_concat["MH"].sum(), 
-            ctcf_concat["CH"].sum() + ctcf_concat["HC"].sum()])
-    
-    upset_fig = plt.figure(dpi=600)
+    if upset_plot:
+        ctcf_concat = pd.concat([patternframe.ctcf_patterns for patternframe in all_duplex_modbeds])
+        ctcf_upset_mshp = upsetplot.from_memberships(memberships=[
+            ["C"], 
+            ["5mC"],
+            ["C", "5mC"],
+            ["5hmC"],
+            ["5mC", "5hmC"],
+            ["C", "5hmC"]],
+            data = [
+                ctcf_concat["CC"].sum(), 
+                ctcf_concat["MM"].sum(), 
+                ctcf_concat["CM"].sum() + ctcf_concat["MC"].sum(), 
+                ctcf_concat["HH"].sum(), 
+                ctcf_concat["HM"].sum() + ctcf_concat["MH"].sum(), 
+                ctcf_concat["CH"].sum() + ctcf_concat["HC"].sum()])
+        
+        upset_fig = plt.figure(dpi=600)
 
-    ax4.tick_params("both", bottom=False, labelbottom=False, left=False, labelleft=False)
-    sns.despine(ax=ax4, left=True, bottom=True)
+        ax4.tick_params("both", bottom=False, labelbottom=False, left=False, labelleft=False)
+        sns.despine(ax=ax4, left=True, bottom=True)
 
-    ctcf_upset = upsetplot.UpSet(ctcf_upset_mshp, sort_by="cardinality", sort_categories_by="input", show_percentages=True, 
-                                 facecolor="grey", 
-                                 element_size=None, 
-                                 intersection_plot_elements=3)
+        ctcf_upset = upsetplot.UpSet(ctcf_upset_mshp, sort_by="cardinality", sort_categories_by="input", show_percentages=True, 
+                                    facecolor="grey", 
+                                    element_size=None, 
+                                    intersection_plot_elements=3)
 
-    ctcf_upset.plot(upset_fig)
-    
+        ctcf_upset.plot(upset_fig)
+        upset_fig.savefig("plots/ctcf_upset.svg")
+        upset_fig.savefig("plots/ctcf_upset.png")
+        
     if test_run:
         fig.savefig("plots/tests/ctcf_duplex_analysis.png")
         upset_fig.savefig("plots/tests/ctcf_upset.png")
@@ -421,8 +504,7 @@ def main(test_run=True, min_depth=5):
     else:
         fig.savefig("plots/ctcf_duplex_analysis.png")
         fig.savefig("plots/ctcf_duplex_analysis.svg")
-        upset_fig.savefig("plots/ctcf_upset.svg")
-        upset_fig.savefig("plots/ctcf_upset.png")
+
 
     with pd.ExcelWriter("data/ctcf/ctcf_intersects.xlsx", mode="w") as writer:
         for i, pattern in enumerate(merged_patterns):
@@ -450,6 +532,12 @@ if __name__=="__main__":
                         default=5,
                         required=False,
                         help="Whether to filter the dataset by depth at CpG.")
+    parser.add_argument("--upset_plot", 
+                        dest="upset_plot", 
+                        action="store_true",
+                        default=False,
+                        help="Whether to filter the dataset by depth at CpG.")
+
 
     args = parser.parse_args()
 
@@ -459,4 +547,4 @@ if __name__=="__main__":
         test_run = False
 
     args = parser.parse_args()
-    main(test_run, args.min_depth)    
+    main(test_run, args.min_depth, args.upset_plot)    
