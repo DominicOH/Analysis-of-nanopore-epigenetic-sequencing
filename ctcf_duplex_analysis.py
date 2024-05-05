@@ -51,8 +51,9 @@ def read_merge(path, test_run=True, replicate=None):
 class PatternFrame:
     def __init__(self, pattern_df):
         self.pattern_df = pattern_df
-        self.ctcf_patterns = ctcf_intersect(pattern_df)
-    
+        self.motif_patterns = motif_intersect(pattern_df)
+        self.chip_patterns = chip_intersect(pattern_df)
+            
     def merge_all_patterns(self, min_depth):
         df = (self.pattern_df
               .query(f"readCount > {min_depth}"))
@@ -62,7 +63,7 @@ class PatternFrame:
         return MergedSites(df, min_depth)
 
     def merge_ctcf_patterns(self, min_depth):
-        df = (self.ctcf_patterns
+        df = (self.chip_patterns
               .query(f"readCount > {min_depth}")
               .eval("Hetero = MH + HM")
               .eval("Hemi = CM + MC + CH + HC"))
@@ -75,7 +76,7 @@ class PatternFrame:
         """
         Outputs a dataframe counting all constutive-modification states. Hetero- and hemi-modification states are grouped. 
         """
-        df = self.ctcf_patterns
+        df = self.motif_patterns
         
         pie_data = pd.DataFrame({
             "Pattern" : ["C", "5mC", "5hmC", "Hemi-dyad", "Hetero-dyad"],
@@ -85,7 +86,7 @@ class PatternFrame:
             })
 
         return pie_data
-    
+
 class MergedSites(PatternFrame):
     def __init__(self, pattern_df, min_depth):
         super().__init__(pattern_df)
@@ -224,10 +225,23 @@ with warnings.catch_warnings():
                              int64=True)
     
 print(len(chip_merge), "CTCF motifs that overlap summits and peaks")
-    
-def ctcf_intersect(df, **intersect_kwargs):
+
+def motif_intersect(df, **intersect_kwargs):
     """
-    Note that this joins with CTCF summits. 
+    Intersects with CTCF motifs - not necessarily those within ChIP peaks. 
+    Overlapping motifs are merged. 
+    """
+    # Loading JASPAR CTCF binding sites 
+    intersect = pr.PyRanges(df, int64=True).intersect(ctcf_motif, strandedness=False, **intersect_kwargs).as_df()
+
+    assert intersect.loc[:, ("Chromosome", "Start", "End")].duplicated().all() == False
+        
+    return intersect
+    
+def chip_intersect(df, **intersect_kwargs):
+    """
+    Intersects with CTCF motifs present in ChIP peaks. 
+    Note that this joins with CTCF summits to remove adjacent peaks that may not be bound.
     """
     # Loading JASPAR CTCF binding sites 
     intersect = pr.PyRanges(df, int64=True).intersect(chip_merge, strandedness=False, **intersect_kwargs).as_df()
@@ -264,12 +278,12 @@ def main(test_run=True, min_depth=5, upset_plot=False):
         
     # Gives the background or expected patterns based on CTCF overlapping sites
     
-    exp_patterns = (pr.PyRanges(all_motif_patterns.pattern_df, int64=True)
-                .join(ctcf_motif, suffix="_Motif", apply_strand_suffix=True)
-                .as_df())["Majority"].value_counts(normalize=True)
+    exp_patterns = (all_motif_patterns.motif_patterns
+                    .as_df()["Majority"]
+                    .value_counts(normalize=True))
 
     # All patterns at CTCF motifs that overlap peak summits
-    ctcf_summit_patterns =  all_motif_patterns.ctcf_patterns
+    ctcf_summit_patterns =  all_motif_patterns.chip_patterns
 
     # observed duplex state at motifs overlapping peak summits
     obs_patterns = ctcf_summit_patterns["Majority"].value_counts()
@@ -286,7 +300,7 @@ def main(test_run=True, min_depth=5, upset_plot=False):
         df = df.reset_index(name="Count").assign(Kind = kind)
         df_l.append(df)
     
-    print(stats.chisquare(obs_patterns, exp))
+    # print(stats.chisquare(obs_patterns, exp))
     
     # fig = plt.figure(dpi=600, figsize=(14.71/2.54, 8/2.54), 
     #                  layout="constrained")
@@ -329,11 +343,13 @@ def main(test_run=True, min_depth=5, upset_plot=False):
            }
         
     pie_data = pd.concat([merged_pattern.piechart_data().reset_index(name="Proportion") for merged_pattern in merged_patterns])
+    print(pie_data)
+    exit()
     pie_data = (pie_data.groupby("index")
                 .mean(numeric_only=True)
                 .reset_index()
                 .replace(["CC", "MM", "HH", "Hetero", "Hemi"], 
-                         ["C", "M", "H", "Hetero-dyad", "Hemi-dyad"]))
+                         ["C", "5mC", "5hmC", "Hetero-dyad", "Hemi-dyad"]))
     
     ax1.pie(pie_data["Proportion"], 
             labels=pie_data["index"], 
@@ -467,7 +483,7 @@ def main(test_run=True, min_depth=5, upset_plot=False):
     # uw, uh = bbox.width, bbox.height
 
     if upset_plot:
-        ctcf_concat = pd.concat([patternframe.ctcf_patterns for patternframe in all_duplex_modbeds])
+        ctcf_concat = pd.concat([patternframe.chip_patterns for patternframe in all_duplex_modbeds])
         ctcf_upset_mshp = upsetplot.from_memberships(memberships=[
             ["C"], 
             ["5mC"],
