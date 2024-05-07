@@ -122,7 +122,7 @@ class MergedSites(PatternFrame):
                                              value_vars=["CC", "MM", "HH", "MC", "CM", "HC", "CH", "HM", "MH"], 
                                              value_name="Count")
         
-        assert ctcf_join.loc[:, ("Chromosome", "Start", "End")].duplicated().all() == False
+        assert ctcf_join.loc[:, ("Chromosome", "Start", "End")].duplicated().all() == False # type: ignore
 
         summary = (ctcf_join.groupby(["Strand_CTCF", "Pattern"])["Count"]
                    .sum()
@@ -235,7 +235,7 @@ def motif_join(df: pd.DataFrame) -> pd.DataFrame:
     # Loading JASPAR CTCF binding sites 
     intersect = pr.PyRanges(df, int64=True).join(ctcf_motif, strandedness=False, apply_strand_suffix=True, suffix="_Motif").as_df()
 
-    assert intersect.loc[:, ("Chromosome", "Start", "End")].duplicated().all() == False
+    assert intersect.loc[:, ("Chromosome", "Start", "End")].duplicated().all() == False # type: ignore
         
     return intersect
     
@@ -247,7 +247,7 @@ def chip_join(df: pd.DataFrame) -> pd.DataFrame:
     # Loading JASPAR CTCF binding sites 
     intersect = pr.PyRanges(df, int64=True).join(chip_merge, strandedness=False, apply_strand_suffix=True, suffix="_ChIP").as_df()
 
-    assert intersect.loc[:, ("Chromosome", "Start", "End")].duplicated().all() == False
+    assert intersect.loc[:, ("Chromosome", "Start", "End")].duplicated().all() == False # type: ignore
         
     return intersect
 
@@ -317,7 +317,7 @@ def main(test_run=True, min_depth=5, upset_plot=False):
             autopct='%.1f',
             radius=.85, rotatelabels=False,
             labeldistance=1.4, pctdistance=1.125,
-            hatch=("", "", "", "/", "\\"),
+            hatch=("", "", "", "/", "\\"), # type: ignore
             wedgeprops = dict(linewidth = 0.1))
     
     ax1.set_title("Duplex patterns\nat CTCF motifs", loc="center")
@@ -358,7 +358,7 @@ def main(test_run=True, min_depth=5, upset_plot=False):
                 hue_order=["Genome", "Motif", "ChIP"],
                 ax=ax2)
     
-    ax2.set_xlabel(None)
+    ax2.set_xlabel(None) # type: ignore
     ax2.set_ylabel("Proportion of duplex basecalls")
     sns.move_legend(ax2, "upper right", frameon=False, ncol=3, title="Pattern at CpG site")
 
@@ -375,69 +375,6 @@ def main(test_run=True, min_depth=5, upset_plot=False):
     
     [print("Motif vs. ChIP", pattern, ":", round(comparer(["Motif", "ChIP"], pattern).pvalue, 4)) 
      for pattern in ["C", "5mC", "5hmC", "Hemi", "Hetero"]]
-
-    # Hemi # 
-
-    # with concurrent.futures.ThreadPoolExecutor(4) as stat_executor:
-    #     hemi_mods_at_ctcf = stat_executor.map(lambda pf: (pf.extract_hemi_states()
-    #                                                         .summarise_ctcf_duplex_states()
-    #                                                         .filter_hemi_reads()
-    #                                                         .quantify_strands()), 
-    #                                           merged_motif_patterns)
-
-    # hemi_mod_summary = pd.concat([hemi.assign(Replicate = i) for i, hemi in enumerate(hemi_mods_at_ctcf)])
-
-    # sns.barplot(hemi_mod_summary, 
-    #     x="Mod", y="Percentage",
-    #     order=["C", "5mC", "5hmC"],
-    #     hue="Strand", palette=sns.color_palette("Paired", 4)[:2], dodge=True,
-    #     errorbar=("sd", 1), err_kws={"lw" : .8}, capsize=.5,
-    #     width=.8,
-    #     ax=ax2)
-    
-    # for mod in ["C", "5mC", "5hmC"]:
-    #     mod_group = hemi_mod_summary.groupby("Mod").get_group(mod)
-    #     motif = np.array(mod_group.query("Strand == 'Motif'")["Percentage"])
-    #     opp = np.array(mod_group.query("Strand == 'Opposite'")["Percentage"])
-    #     print(mod, stats.ttest_ind(motif, opp))
-          
-    # ax2.set_ylabel("Percent of strand modification")
-    # ax2.set_ylim(0)
-    # sns.move_legend(ax2, "upper right", title="Strand", frameon=False)
-    # ax2.set_title(f"Hemi-dyads\nn={hemi_mod_summary['Count'].sum()} reads", loc="center")
-
-    # Hetero # 
-
-    # with concurrent.futures.ThreadPoolExecutor(4) as stat_executor:
-    #     hetero_mods_at_ctcf = stat_executor.map(lambda pf: (pf.extract_hetero_states()
-    #                                                           .summarise_ctcf_duplex_states()
-    #                                                           .filter_hetero_reads()
-    #                                                           .quantify_strands()), 
-    #                                             merged_motif_patterns)
-
-    # hetero_mod_summary = pd.concat([hemi.assign(Replicate = i) for i, hemi in enumerate(hetero_mods_at_ctcf)]).reset_index(drop=True)
-
-    # sns.barplot(hetero_mod_summary, 
-    #     x="Mod", y="Percentage",
-    #     order=["5mC", "5hmC"],
-    #     hue="Strand", palette=sns.color_palette("Paired", 4)[2:], dodge=True,
-    #     errorbar=("sd", 1), err_kws={"lw" : .8}, capsize=.5,
-    #     width=.8,
-    #     ax=ax3)
-    
-    # for mod in ["5mC", "5hmC"]:
-    #     mod_group = hetero_mod_summary.groupby("Mod").get_group(mod)
-    #     motif = np.array(mod_group.query("Strand == 'Motif'")["Percentage"])
-    #     opp = np.array(mod_group.query("Strand == 'Opposite'")["Percentage"])
-    #     print(mod, stats.ttest_ind(motif, opp))
-    
-    # ax3.set_ylabel("Percent of strand basecalls")
-    # ax3.set_ylim(0, 70)
-    # sns.move_legend(ax3, "upper left", title="Strand", frameon=False, ncol=2)
-    # ax3.set_title(f"Hetero-dyads\nn={hetero_mod_summary['Count'].sum()} reads", loc="center")
-
-    # for ax in [ax2, ax3]:
-    #     ax.set_xlabel(None)
 
     for i, ax in enumerate([ax1, ax2, ax3, ax4]):
         ax.set_title(string.ascii_lowercase[i], fontdict={"fontweight" : "bold"}, loc="left")        
@@ -466,7 +403,7 @@ def main(test_run=True, min_depth=5, upset_plot=False):
 
         ctcf_upset = upsetplot.UpSet(ctcf_upset_mshp, sort_by="cardinality", sort_categories_by="input", show_percentages=True, 
                                     facecolor="grey", 
-                                    element_size=None, 
+                                    element_size=None,  # type: ignore
                                     intersection_plot_elements=3)
 
         ctcf_upset.plot(upset_fig)
