@@ -284,9 +284,9 @@ def main(test_run=True, min_depth=5, upset_plot=False):
     ax4 = fig.add_subplot(gs[1, 1:])
 
     palette = {
-    "C" : "#edf8b1", 
-    "5mC" : "#7fcdbb", 
     "5hmC" : "#2c7fb8",
+    "5mC" : "#7fcdbb", 
+    "C" : "#edf8b1", 
     "Hemi" : "#edf8b1",
     "Hetero" : "#7fcdbb"}
         
@@ -299,17 +299,16 @@ def main(test_run=True, min_depth=5, upset_plot=False):
     count_sum = motif_pie_data["Count"].sum()
     motif_pie_data.eval("Proportion = Count / @count_sum", inplace=True)
 
-    pie = ax1.pie(motif_pie_data["Proportion"], 
-                  labels=motif_pie_data["index"], 
-                  colors=sns.color_palette("GnBu"),
-                  startangle=45, counterclock=False,
-                  autopct='%.1f',
-                  radius=1, rotatelabels=False,
-                  labeldistance=1.25, pctdistance=.75,
-                  wedgeprops = {'linewidth' : 0.1})
-        
-    print(pie)
-    exit()
+    ax1.pie(motif_pie_data["Proportion"], 
+            labels=motif_pie_data["Pattern"], 
+            colors=palette.values(),
+            startangle=45, counterclock=False,
+            autopct='%.1f',
+            radius=1, rotatelabels=False,
+            labeldistance=1.25, pctdistance=.75,
+            hatch=("", "", "", "/", "|"),
+            wedgeprops = dict(linewidth = 0.1))
+    
     # with concurrent.futures.ThreadPoolExecutor(4) as stat_executor:
     #     mod_combinations = stat_executor.map(lambda pf: (pf.summarise_ctcf_duplex_states()
     #                                                        .quantify_mod_combinations()),
