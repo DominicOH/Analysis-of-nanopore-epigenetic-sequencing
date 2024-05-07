@@ -58,7 +58,6 @@ class PatternFrame:
         df = (self.pattern_df
               .query(f"readCount > {min_depth}"))
         
-        # df = df.assign(Majority = lambda r: r.loc[:, ("CC", "MM", "HH", "CM" , "MC" , "HC" , "CH" , "MH" , "HM")].idxmax(axis=1))
         df = df.melt(id_vars=["Chromosome", "Start", "End"], 
                      value_vars=["CC", "MM", "HH", "CM" , "MC" , "HC" , "CH" , "MH" , "HM"],
                      var_name="Pattern", value_name="Count")
@@ -71,7 +70,6 @@ class PatternFrame:
         df = (self.chip_patterns
               .query(f"readCount > {min_depth}"))
         
-        # df = df.assign(Majority = lambda r: r.loc[:, ("CC", "MM", "HH", "Hetero", "Hemi")].idxmax(axis=1))
         df = df.melt(id_vars=["Chromosome", "Start", "End", "Strand_ChIP"], 
                      value_vars=["CC", "MM", "HH", "CM" , "MC" , "HC" , "CH" , "MH" , "HM"],
                      var_name="Pattern", value_name="Count")
@@ -82,28 +80,12 @@ class PatternFrame:
         df = (self.motif_patterns
               .query(f"readCount > {min_depth}"))
         
-        # df = df.assign(Majority = lambda r: r.loc[:, ("CC", "MM", "HH", "Hetero", "Hemi")].idxmax(axis=1))
         df = df.melt(id_vars=["Chromosome", "Start", "End", "Strand_Motif"], 
                      value_vars=["CC", "MM", "HH", "CM" , "MC" , "HC" , "CH" , "MH" , "HM"],
                      var_name="Pattern", value_name="Count")
 
         return MergedSites(df, min_depth)
            
-    # def piechart_data(self):
-    #     """
-    #     Outputs a dataframe counting all constutive-modification states. Hetero- and hemi-modification states are grouped. 
-    #     """
-    #     df = self.motif_patterns
-        
-    #     pie_data = pd.DataFrame({
-    #         "Pattern" : ["C", "5mC", "5hmC", "Hemi-dyad", "Hetero-dyad"],
-    #         "Count" : [df["CC"].sum(), df["MM"].sum(), df["HH"].sum(), 
-    #                    df["MC"].sum() + df["CM"].sum() + df["HC"].sum() + df["CH"].sum(),
-    #                    df["MH"].sum() + df["HM"].sum()]
-    #         })
-
-    #     return pie_data
-
 class MergedSites(PatternFrame):
     def __init__(self, pattern_df, min_depth):
         super().__init__(pattern_df)
@@ -285,36 +267,6 @@ def main(test_run=True, min_depth=5, upset_plot=False):
 
     fig = plt.figure(figsize=(120/25.4, 89/25.4), dpi=600, layout="constrained")
 
-    # all_duplex_pfs = pd.concat([modbed.pattern_df for modbed in all_duplex_modbeds])
-    
-    # All patterns at CTCF motifs
-    # all_motif_patterns = PatternFrame(
-    #     pr.PyRanges(all_duplex_pfs, int64=True).intersect(ctcf_motif)
-    #     .as_df().groupby(["Chromosome", "Start", "End"], as_index=True, observed=True)
-    #     .sum(numeric_only=True)
-    #     .reset_index()
-    #     ).merge_all_patterns(min_depth)
-    
-    # print(stats.chisquare(obs_patterns, exp))
-    
-    # fig = plt.figure(dpi=600, figsize=(14.71/2.54, 8/2.54), 
-    #                  layout="constrained")
-    # ax=fig.add_subplot()
-    # 
-    # sns.barplot(pd.concat(df_l),
-    #             x="index", y="Count",
-    #             hue="Kind", hue_order=["Expected", "Observed"], 
-    #             palette="BuGn",
-    #             ax=ax)
-    # ax.set_xlabel(None)
-    # ax.set_ylabel("CpG sites at CTCF peaks")
-    # 
-    # sns.move_legend(ax, "upper right", frameon=False, title=None)
-    # sns.despine()
-
-    # fig.savefig("plots/presentation_ctcf.svg", 
-    #             transparent=True)
-
     sns.set_style("ticks")
     mpl.rc('font', size=5)
 
@@ -332,80 +284,87 @@ def main(test_run=True, min_depth=5, upset_plot=False):
     ax4 = fig.add_subplot(gs[1, 1:])
 
     palette = {
-    "C" : "#e0f3db", 
-    "5mC" : "#a8ddb5", 
-    "5hmC" : "#43a2ca"
-           }
+    "C" : "#edf8b1", 
+    "5mC" : "#7fcdbb", 
+    "5hmC" : "#2c7fb8",
+    "Hemi" : "#edf8b1",
+    "Hetero" : "#7fcdbb"}
         
-    pie_data = pd.concat([merged_pattern.piechart_data() for merged_pattern in merged_motif_patterns])
+    # show what the duplex state is at CTCF motifs
+    motif_pie_data = pd.concat([merged_pattern.piechart_data() for merged_pattern in merged_motif_patterns])
 
-    pie_data = (pie_data.groupby("Pattern")
+    motif_pie_data = (motif_pie_data.groupby("Pattern")
                 .sum(numeric_only=True)
                 .reset_index())
-    count_sum = pie_data["Count"].sum()
-    pie_data.eval("Proportion = Count / @count_sum", inplace=True)
+    count_sum = motif_pie_data["Count"].sum()
+    motif_pie_data.eval("Proportion = Count / @count_sum", inplace=True)
+
+    pie = ax1.pie(motif_pie_data["Proportion"], 
+                  labels=motif_pie_data["index"], 
+                  colors=sns.color_palette("GnBu"),
+                  startangle=45, counterclock=False,
+                  autopct='%.1f',
+                  radius=1, rotatelabels=False,
+                  labeldistance=1.25, pctdistance=.75,
+                  wedgeprops = {'linewidth' : 0.1})
+        
+    print(pie)
+    exit()
+    # with concurrent.futures.ThreadPoolExecutor(4) as stat_executor:
+    #     mod_combinations = stat_executor.map(lambda pf: (pf.summarise_ctcf_duplex_states()
+    #                                                        .quantify_mod_combinations()),
+    #                                          merged_motif_patterns)
+    # mod_combinations_summary = pd.concat([mod_combination.assign(Replicate = i) for i, mod_combination in enumerate(mod_combinations)])
     
-    ax1.pie(pie_data["Proportion"], 
-            labels=pie_data["index"], 
-            colors=sns.color_palette("GnBu"),
-            startangle=45, counterclock=False,
-            autopct='%.1f',
-            radius=1, rotatelabels=False,
-            labeldistance=1.25, pctdistance=.75,
-            wedgeprops = {'linewidth': 0.1})
+    # then want to show what the 
+    # c, m, h = [mod_combinations_summary.groupby("motif_mod").get_group(mod) for mod in ["C", "5mC", "5hmC"]]
+
+    # sns.barplot(c, 
+    #         y="motif_mod", x="Percentage",
+    #         hue_order=["C", "5mC", "5hmC"],
+    #         hue="opp_mod", palette=palette,
+    #         errorbar=("sd", 1), err_kws={"lw" : .8}, capsize=.5,
+    #         width=0.8, 
+    #         legend=True,
+    #         ax=c_ax)
+
+    # sns.move_legend(c_ax, loc="upper right", title=None, frameon=False)
+    # c_ax.get_legend().set_in_layout(False)
+    # # ax7.set_ylabel("Percent modification\nopposite motif")
+
+    # sns.barplot(m, 
+    #             y="motif_mod", x="Percentage",
+    #             hue="opp_mod", palette=palette,
+    #             hue_order=["C", "5mC", "5hmC"],
+    #             errorbar=("sd", 1), err_kws={"lw" : .8}, capsize=.5,
+    #             width=0.8, 
+    #             legend=False,
+    #             ax=mc_ax)
+
+    # sns.barplot(h, 
+    #             y="motif_mod", x="Percentage",
+    #             hue="opp_mod", palette=palette,
+    #             hue_order=["C", "5mC", "5hmC"],
+    #             errorbar=("sd", 1), err_kws={"lw" : .8}, capsize=.5,
+    #             width=0.8, 
+    #             legend=False,
+    #             ax=hmc_ax)
     
-    with concurrent.futures.ThreadPoolExecutor(4) as stat_executor:
-        mod_combinations = stat_executor.map(lambda pf: (pf.summarise_ctcf_duplex_states()
-                                                           .quantify_mod_combinations()),
-                                             merged_motif_patterns)
-    mod_combinations_summary = pd.concat([mod_combination.assign(Replicate = i) for i, mod_combination in enumerate(mod_combinations)])
+    # for ax in [mc_ax, hmc_ax]:
+    #     ax.sharex(c_ax)
+    # hmc_ax.set_xlabel("Percent opposite strand basecall")
     
-    c, m, h = [mod_combinations_summary.groupby("motif_mod").get_group(mod) for mod in ["C", "5mC", "5hmC"]]
+    # sns.despine()
 
-    sns.barplot(c, 
-            y="motif_mod", x="Percentage",
-            hue_order=["C", "5mC", "5hmC"],
-            hue="opp_mod", palette=palette,
-            errorbar=("sd", 1), err_kws={"lw" : .8}, capsize=.5,
-            width=0.8, 
-            legend=True,
-            ax=c_ax)
+    # [ax.set_ylabel(None) for ax in [c_ax, mc_ax, hmc_ax]]
 
-    sns.move_legend(c_ax, loc="upper right", title=None, frameon=False)
-    c_ax.get_legend().set_in_layout(False)
-    # ax7.set_ylabel("Percent modification\nopposite motif")
+    # for ax in [c_ax, mc_ax]:
+    #     ax.set_xlabel(None)
+    #     ax.tick_params("both", bottom=False, labelbottom=False)
+    #     sns.despine(ax=ax, bottom=True)
+    # mc_ax.set_ylabel("Modification at motif")
 
-    sns.barplot(m, 
-                y="motif_mod", x="Percentage",
-                hue="opp_mod", palette=palette,
-                hue_order=["C", "5mC", "5hmC"],
-                errorbar=("sd", 1), err_kws={"lw" : .8}, capsize=.5,
-                width=0.8, 
-                legend=False,
-                ax=mc_ax)
 
-    sns.barplot(h, 
-                y="motif_mod", x="Percentage",
-                hue="opp_mod", palette=palette,
-                hue_order=["C", "5mC", "5hmC"],
-                errorbar=("sd", 1), err_kws={"lw" : .8}, capsize=.5,
-                width=0.8, 
-                legend=False,
-                ax=hmc_ax)
-    
-    for ax in [mc_ax, hmc_ax]:
-        ax.sharex(c_ax)
-    hmc_ax.set_xlabel("Percent opposite strand basecall")
-    
-    sns.despine()
-
-    [ax.set_ylabel(None) for ax in [c_ax, mc_ax, hmc_ax]]
-
-    for ax in [c_ax, mc_ax]:
-        ax.set_xlabel(None)
-        ax.tick_params("both", bottom=False, labelbottom=False)
-        sns.despine(ax=ax, bottom=True)
-    mc_ax.set_ylabel("Modification at motif")
 
     # Hemi # 
 
