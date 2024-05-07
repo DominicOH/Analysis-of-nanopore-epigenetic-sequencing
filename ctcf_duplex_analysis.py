@@ -263,8 +263,14 @@ def main(test_run=True, min_depth=5, upset_plot=False):
     with concurrent.futures.ProcessPoolExecutor(len(file_paths)) as load_executor:
         all_duplex_modbeds = [load_executor.submit(read_merge, path, test_run, replicate+1) for replicate, path in enumerate(file_paths)]
         all_duplex_modbeds = [modbed.result() for modbed in all_duplex_modbeds]
-        merged_motif_patterns = [pf.merge_motif_patterns(min_depth) for pf in all_duplex_modbeds]
+    
+    with concurrent.futures.ThreadPoolExecutor(len(all_duplex_modbeds)) as merge_executor:
+        merged_motif_patterns = merge_executor.map(lambda pf: pf.merge_motif_patterns(min_depth), all_duplex_modbeds)
+    print([patterns for patterns in merged_motif_patterns])
 
+    with concurrent.futures.ThreadPoolExecutor(len(all_duplex_modbeds)) as merge_executor:
+        merged_chip_patterns = merge_executor.map(lambda pf: pf.merge_chip_patterns(min_depth), all_duplex_modbeds)
+ 
     fig = plt.figure(figsize=(120/25.4, 89/25.4), dpi=600, layout="constrained")
 
     sns.set_style("ticks")
@@ -309,62 +315,8 @@ def main(test_run=True, min_depth=5, upset_plot=False):
             hatch=("", "", "", "/", "|"),
             wedgeprops = dict(linewidth = 0.1))
     
-    # with concurrent.futures.ThreadPoolExecutor(4) as stat_executor:
-    #     mod_combinations = stat_executor.map(lambda pf: (pf.summarise_ctcf_duplex_states()
-    #                                                        .quantify_mod_combinations()),
-    #                                          merged_motif_patterns)
-    # mod_combinations_summary = pd.concat([mod_combination.assign(Replicate = i) for i, mod_combination in enumerate(mod_combinations)])
+    chip_pie_data = pd.concat([merged_pattern.piechart_data() for merged_pattern in merged_motif_patterns])
     
-    # then want to show what the 
-    # c, m, h = [mod_combinations_summary.groupby("motif_mod").get_group(mod) for mod in ["C", "5mC", "5hmC"]]
-
-    # sns.barplot(c, 
-    #         y="motif_mod", x="Percentage",
-    #         hue_order=["C", "5mC", "5hmC"],
-    #         hue="opp_mod", palette=palette,
-    #         errorbar=("sd", 1), err_kws={"lw" : .8}, capsize=.5,
-    #         width=0.8, 
-    #         legend=True,
-    #         ax=c_ax)
-
-    # sns.move_legend(c_ax, loc="upper right", title=None, frameon=False)
-    # c_ax.get_legend().set_in_layout(False)
-    # # ax7.set_ylabel("Percent modification\nopposite motif")
-
-    # sns.barplot(m, 
-    #             y="motif_mod", x="Percentage",
-    #             hue="opp_mod", palette=palette,
-    #             hue_order=["C", "5mC", "5hmC"],
-    #             errorbar=("sd", 1), err_kws={"lw" : .8}, capsize=.5,
-    #             width=0.8, 
-    #             legend=False,
-    #             ax=mc_ax)
-
-    # sns.barplot(h, 
-    #             y="motif_mod", x="Percentage",
-    #             hue="opp_mod", palette=palette,
-    #             hue_order=["C", "5mC", "5hmC"],
-    #             errorbar=("sd", 1), err_kws={"lw" : .8}, capsize=.5,
-    #             width=0.8, 
-    #             legend=False,
-    #             ax=hmc_ax)
-    
-    # for ax in [mc_ax, hmc_ax]:
-    #     ax.sharex(c_ax)
-    # hmc_ax.set_xlabel("Percent opposite strand basecall")
-    
-    # sns.despine()
-
-    # [ax.set_ylabel(None) for ax in [c_ax, mc_ax, hmc_ax]]
-
-    # for ax in [c_ax, mc_ax]:
-    #     ax.set_xlabel(None)
-    #     ax.tick_params("both", bottom=False, labelbottom=False)
-    #     sns.despine(ax=ax, bottom=True)
-    # mc_ax.set_ylabel("Modification at motif")
-
-
-
     # Hemi # 
 
     with concurrent.futures.ThreadPoolExecutor(4) as stat_executor:
