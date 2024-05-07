@@ -266,7 +266,6 @@ def main(test_run=True, min_depth=5, upset_plot=False):
     
     with concurrent.futures.ThreadPoolExecutor(len(all_duplex_modbeds)) as merge_executor:
         merged_motif_patterns = merge_executor.map(lambda pf: pf.merge_motif_patterns(min_depth), all_duplex_modbeds)
-    print([patterns for patterns in merged_motif_patterns])
 
     with concurrent.futures.ThreadPoolExecutor(len(all_duplex_modbeds)) as merge_executor:
         merged_chip_patterns = merge_executor.map(lambda pf: pf.merge_chip_patterns(min_depth), all_duplex_modbeds)
@@ -279,108 +278,168 @@ def main(test_run=True, min_depth=5, upset_plot=False):
     gs = GridSpec(2, 3, fig)
 
     ax1 = fig.add_subplot(gs[0, 0])
-    ax2 = fig.add_subplot(gs[0, 2])
-
-    sgs2 = gs[0, 1].subgridspec(3, 1)
-    c_ax = fig.add_subplot(sgs2[0, 0])
-    mc_ax = fig.add_subplot(sgs2[1, 0])
-    hmc_ax = fig.add_subplot(sgs2[2, 0])
-
-    ax3 = fig.add_subplot(gs[1, 0])
-    ax4 = fig.add_subplot(gs[1, 1:])
+    ax2 = fig.add_subplot(gs[0, 1:])
+    ax3 = fig.add_subplot(gs[1, :2])
+    ax4 = fig.add_subplot(gs[1, 2])
 
     palette = {
-    "5hmC" : "#2c7fb8",
-    "5mC" : "#7fcdbb", 
-    "C" : "#edf8b1", 
-    "Hemi" : "#edf8b1",
-    "Hetero" : "#7fcdbb"}
+    "5hmC" : "#78c679",
+    "5mC" : "#c2e699", 
+    "C" : "#ffffcc", 
+    "Hemi" : "#31a354",
+    "Hetero" : "#006837"}
+
+    def eval_basecall_proportions(df: pd.DataFrame):
+        count_sum = df["Count"].sum()
+        df.eval("Proportion = Count / @count_sum", inplace=True)
         
+        return df
+
+    def merge_pie_replicates(df: pd.DataFrame):
+        df = (df.groupby("Pattern")
+              .sum(numeric_only=True)
+              .reset_index())
+        df = eval_basecall_proportions(df)
+
+        return df
+
     # show what the duplex state is at CTCF motifs
-    motif_pie_data = pd.concat([merged_pattern.piechart_data() for merged_pattern in merged_motif_patterns])
+    with concurrent.futures.ThreadPoolExecutor(4) as pie_executor:
+        motif_basecalls = pie_executor.map(lambda pf: pf.piechart_data(), merged_motif_patterns)
+        motif_basecalls = pd.concat([eval_basecall_proportions(pie.assign(Replicate = i)) for i, pie in enumerate(motif_basecalls)])
 
-    motif_pie_data = (motif_pie_data.groupby("Pattern")
-                .sum(numeric_only=True)
-                .reset_index())
-    count_sum = motif_pie_data["Count"].sum()
-    motif_pie_data.eval("Proportion = Count / @count_sum", inplace=True)
+    motif_piechart = merge_pie_replicates(motif_basecalls)
 
-    ax1.pie(motif_pie_data["Proportion"], 
-            labels=motif_pie_data["Pattern"], 
+    ax1.pie(motif_piechart["Proportion"], 
+            labels=motif_piechart["Pattern"], 
             colors=palette.values(),
             startangle=45, counterclock=False,
             autopct='%.1f',
-            radius=1, rotatelabels=False,
-            labeldistance=1.25, pctdistance=.75,
-            hatch=("", "", "", "/", "|"),
+            radius=.85, rotatelabels=False,
+            labeldistance=1.4, pctdistance=1.125,
+            hatch=("", "", "", "/", "\\"),
             wedgeprops = dict(linewidth = 0.1))
     
-    chip_pie_data = pd.concat([merged_pattern.piechart_data() for merged_pattern in merged_motif_patterns])
+    ax1.set_title("Duplex patterns\nat CTCF motifs", loc="center")
+
+    with concurrent.futures.ThreadPoolExecutor(4) as pie_executor:
+        chip_basecalls = pie_executor.map(lambda pf: pf.piechart_data(), merged_chip_patterns)
+        chip_basecalls = pd.concat([eval_basecall_proportions(pie.assign(Replicate = i)) for i, pie in enumerate(chip_basecalls)])
+        
+    root_path = "data/duplex_data/patterns/"
+    files = ["CBM_2_rep1.masked.bed.duplex_patterns.tsv", "CBM_3_rep1.sorted.bam.bed.duplex_patterns.tsv",
+         "CBM_2_rep2.masked.bed.duplex_patterns.tsv", "CBM_3_rep2.sorted.bam.bed.duplex_patterns.tsv"]
+
+    file_paths = [root_path + file for file in files]
+
+    genome_pie_data = [(pd.read_table(path)
+                        .rename(columns={"N_Pattern" : "Count"})
+                        .replace(["-,m,C", "m,-,C", "-,h,C", "h,-,C", "m,h,C", "h,m,C", "-,-,C", "m,m,C", "h,h,C"], 
+                                 ["Hemi", "Hemi", "Hemi", "Hemi", "Hetero", "Hetero", "C", "5mC", "5hmC"])
+                        .groupby(["Pattern"])["Count"]
+                        .sum()
+                        .reset_index()
+                        .assign(Replicate = i))
+                        for i, path in enumerate(file_paths)]
     
+    genome_basecalls = pd.concat(map(eval_basecall_proportions, genome_pie_data))
+    
+    motif_basecalls["Type"], chip_basecalls["Type"], genome_basecalls["Type"] = "Motif", "ChIP", "Genome"
+    motif_vs_chip = pd.concat([chip_basecalls, motif_basecalls, genome_basecalls])
+
+    sns.barplot(motif_vs_chip,
+                x="Pattern", y="Proportion", 
+                hue="Type",
+                palette="GnBu",
+                err_kws={'linewidth': 0.8},
+                capsize=.5,
+                errorbar=("sd", 1),
+                order=["C", "5mC", "5hmC", "Hemi", "Hetero"],
+                hue_order=["Genome", "Motif", "ChIP"],
+                ax=ax2)
+    
+    ax2.set_xlabel(None)
+    ax2.set_ylabel("Proportion of duplex basecalls")
+    sns.move_legend(ax2, "upper right", frameon=False, ncol=3, title="Pattern at CpG site")
+
+    # Stats for ax1 and ax2
+
+    def comparer(kind: list, pattern):
+        x = motif_vs_chip.loc[(motif_vs_chip["Type"] == kind[0]) & (motif_vs_chip["Pattern"] == pattern), "Proportion"]    
+        y = motif_vs_chip.loc[(motif_vs_chip["Type"] == kind[1]) & (motif_vs_chip["Pattern"] == pattern), "Proportion"]
+
+        return stats.ttest_ind(x, y)
+    
+    [print("Genome vs. Motif", pattern, ":", round(comparer(["Genome", "Motif"], pattern).pvalue, 4)) 
+     for pattern in ["C", "5mC", "5hmC", "Hemi", "Hetero"]]
+    
+    [print("Motif vs. ChIP", pattern, ":", round(comparer(["Motif", "ChIP"], pattern).pvalue, 4)) 
+     for pattern in ["C", "5mC", "5hmC", "Hemi", "Hetero"]]
+
     # Hemi # 
 
-    with concurrent.futures.ThreadPoolExecutor(4) as stat_executor:
-        hemi_mods_at_ctcf = stat_executor.map(lambda pf: (pf.extract_hemi_states()
-                                                            .summarise_ctcf_duplex_states()
-                                                            .filter_hemi_reads()
-                                                            .quantify_strands()), 
-                                              merged_motif_patterns)
+    # with concurrent.futures.ThreadPoolExecutor(4) as stat_executor:
+    #     hemi_mods_at_ctcf = stat_executor.map(lambda pf: (pf.extract_hemi_states()
+    #                                                         .summarise_ctcf_duplex_states()
+    #                                                         .filter_hemi_reads()
+    #                                                         .quantify_strands()), 
+    #                                           merged_motif_patterns)
 
-    hemi_mod_summary = pd.concat([hemi.assign(Replicate = i) for i, hemi in enumerate(hemi_mods_at_ctcf)])
+    # hemi_mod_summary = pd.concat([hemi.assign(Replicate = i) for i, hemi in enumerate(hemi_mods_at_ctcf)])
 
-    sns.barplot(hemi_mod_summary, 
-        x="Mod", y="Percentage",
-        order=["C", "5mC", "5hmC"],
-        hue="Strand", palette=sns.color_palette("Paired", 4)[:2], dodge=True,
-        errorbar=("sd", 1), err_kws={"lw" : .8}, capsize=.5,
-        width=.8,
-        ax=ax2)
+    # sns.barplot(hemi_mod_summary, 
+    #     x="Mod", y="Percentage",
+    #     order=["C", "5mC", "5hmC"],
+    #     hue="Strand", palette=sns.color_palette("Paired", 4)[:2], dodge=True,
+    #     errorbar=("sd", 1), err_kws={"lw" : .8}, capsize=.5,
+    #     width=.8,
+    #     ax=ax2)
     
-    for mod in ["C", "5mC", "5hmC"]:
-        mod_group = hemi_mod_summary.groupby("Mod").get_group(mod)
-        motif = np.array(mod_group.query("Strand == 'Motif'")["Percentage"])
-        opp = np.array(mod_group.query("Strand == 'Opposite'")["Percentage"])
-        print(mod, stats.ttest_ind(motif, opp))
+    # for mod in ["C", "5mC", "5hmC"]:
+    #     mod_group = hemi_mod_summary.groupby("Mod").get_group(mod)
+    #     motif = np.array(mod_group.query("Strand == 'Motif'")["Percentage"])
+    #     opp = np.array(mod_group.query("Strand == 'Opposite'")["Percentage"])
+    #     print(mod, stats.ttest_ind(motif, opp))
           
-    ax2.set_ylabel("Percent of strand modification")
-    ax2.set_ylim(0)
-    sns.move_legend(ax2, "upper right", title="Strand", frameon=False)
-    ax2.set_title(f"Hemi-dyads\nn={hemi_mod_summary['Count'].sum()} reads", loc="center")
+    # ax2.set_ylabel("Percent of strand modification")
+    # ax2.set_ylim(0)
+    # sns.move_legend(ax2, "upper right", title="Strand", frameon=False)
+    # ax2.set_title(f"Hemi-dyads\nn={hemi_mod_summary['Count'].sum()} reads", loc="center")
 
     # Hetero # 
 
-    with concurrent.futures.ThreadPoolExecutor(4) as stat_executor:
-        hetero_mods_at_ctcf = stat_executor.map(lambda pf: (pf.extract_hetero_states()
-                                                              .summarise_ctcf_duplex_states()
-                                                              .filter_hetero_reads()
-                                                              .quantify_strands()), 
-                                                merged_motif_patterns)
+    # with concurrent.futures.ThreadPoolExecutor(4) as stat_executor:
+    #     hetero_mods_at_ctcf = stat_executor.map(lambda pf: (pf.extract_hetero_states()
+    #                                                           .summarise_ctcf_duplex_states()
+    #                                                           .filter_hetero_reads()
+    #                                                           .quantify_strands()), 
+    #                                             merged_motif_patterns)
 
-    hetero_mod_summary = pd.concat([hemi.assign(Replicate = i) for i, hemi in enumerate(hetero_mods_at_ctcf)]).reset_index(drop=True)
+    # hetero_mod_summary = pd.concat([hemi.assign(Replicate = i) for i, hemi in enumerate(hetero_mods_at_ctcf)]).reset_index(drop=True)
 
-    sns.barplot(hetero_mod_summary, 
-        x="Mod", y="Percentage",
-        order=["5mC", "5hmC"],
-        hue="Strand", palette=sns.color_palette("Paired", 4)[2:], dodge=True,
-        errorbar=("sd", 1), err_kws={"lw" : .8}, capsize=.5,
-        width=.8,
-        ax=ax3)
+    # sns.barplot(hetero_mod_summary, 
+    #     x="Mod", y="Percentage",
+    #     order=["5mC", "5hmC"],
+    #     hue="Strand", palette=sns.color_palette("Paired", 4)[2:], dodge=True,
+    #     errorbar=("sd", 1), err_kws={"lw" : .8}, capsize=.5,
+    #     width=.8,
+    #     ax=ax3)
     
-    for mod in ["5mC", "5hmC"]:
-        mod_group = hetero_mod_summary.groupby("Mod").get_group(mod)
-        motif = np.array(mod_group.query("Strand == 'Motif'")["Percentage"])
-        opp = np.array(mod_group.query("Strand == 'Opposite'")["Percentage"])
-        print(mod, stats.ttest_ind(motif, opp))
+    # for mod in ["5mC", "5hmC"]:
+    #     mod_group = hetero_mod_summary.groupby("Mod").get_group(mod)
+    #     motif = np.array(mod_group.query("Strand == 'Motif'")["Percentage"])
+    #     opp = np.array(mod_group.query("Strand == 'Opposite'")["Percentage"])
+    #     print(mod, stats.ttest_ind(motif, opp))
     
-    ax3.set_ylabel("Percent of strand basecalls")
-    ax3.set_ylim(0, 70)
-    sns.move_legend(ax3, "upper left", title="Strand", frameon=False, ncol=2)
-    ax3.set_title(f"Hetero-dyads\nn={hetero_mod_summary['Count'].sum()} reads", loc="center")
+    # ax3.set_ylabel("Percent of strand basecalls")
+    # ax3.set_ylim(0, 70)
+    # sns.move_legend(ax3, "upper left", title="Strand", frameon=False, ncol=2)
+    # ax3.set_title(f"Hetero-dyads\nn={hetero_mod_summary['Count'].sum()} reads", loc="center")
 
-    for ax in [ax2, ax3]:
-        ax.set_xlabel(None)
+    # for ax in [ax2, ax3]:
+    #     ax.set_xlabel(None)
 
-    for i, ax in enumerate([ax1, c_ax, ax2, ax3, ax4]):
+    for i, ax in enumerate([ax1, ax2, ax3, ax4]):
         ax.set_title(string.ascii_lowercase[i], fontdict={"fontweight" : "bold"}, loc="left")        
         
     # bbox = ax3.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
@@ -405,36 +464,37 @@ def main(test_run=True, min_depth=5, upset_plot=False):
         
         upset_fig = plt.figure(dpi=600)
 
-        ax4.tick_params("both", bottom=False, labelbottom=False, left=False, labelleft=False)
-        sns.despine(ax=ax4, left=True, bottom=True)
-
         ctcf_upset = upsetplot.UpSet(ctcf_upset_mshp, sort_by="cardinality", sort_categories_by="input", show_percentages=True, 
                                     facecolor="grey", 
                                     element_size=None, 
                                     intersection_plot_elements=3)
 
         ctcf_upset.plot(upset_fig)
+
         upset_fig.savefig("plots/ctcf_upset.svg")
         upset_fig.savefig("plots/ctcf_upset.png")
+    
+    ax3.tick_params("both", bottom=False, labelbottom=False, left=False, labelleft=False)
+    sns.despine()
+    sns.despine(ax=ax3, left=True, bottom=True)
         
     if test_run:
         fig.savefig("plots/tests/ctcf_duplex_analysis.png")
-        upset_fig.savefig("plots/tests/ctcf_upset.png")
 
     else:
         fig.savefig("plots/ctcf_duplex_analysis.png")
         fig.savefig("plots/ctcf_duplex_analysis.svg")
 
 
-    with pd.ExcelWriter("data/ctcf/ctcf_intersects.xlsx", mode="w") as writer:
-        for i, pattern in enumerate(merged_motif_patterns):
-            ((pr.PyRanges(pattern.pattern_df, int64=True)
-                .join(chip_merge, apply_strand_suffix=True, suffix="_CTCF"))
-                .as_df()
-                .sort_values("qValue", ascending=False)
-                .groupby(["Chromosome", "Start", "End"], observed=True)
-                .head(1)
-                .to_excel(writer, sheet_name=f"Sheet {i+1}", index=False))
+    # with pd.ExcelWriter("data/ctcf/ctcf_intersects.xlsx", mode="w") as writer:
+    #     for i, pattern in enumerate(merged_motif_patterns):
+    #         ((pr.PyRanges(pattern.pattern_df, int64=True)
+    #             .join(chip_merge, apply_strand_suffix=True, suffix="_CTCF"))
+    #             .as_df()
+    #             .sort_values("qValue", ascending=False)
+    #             .groupby(["Chromosome", "Start", "End"], observed=True)
+    #             .head(1)
+    #             .to_excel(writer, sheet_name=f"Sheet {i+1}", index=False))
 
 ##### Main function #####
 
