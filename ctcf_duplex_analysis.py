@@ -49,43 +49,60 @@ def read_merge(path, test_run=True, replicate=None):
     return merge_pattern(read_duplex_modbed(path, test_run, replicate))
 
 class PatternFrame:
-    def __init__(self, pattern_df):
+    def __init__(self, pattern_df: pd.DataFrame):
         self.pattern_df = pattern_df
-        self.motif_patterns = motif_intersect(pattern_df)
-        self.chip_patterns = chip_intersect(pattern_df)
+        self.motif_patterns = motif_join(pattern_df)
+        self.chip_patterns = chip_join(pattern_df)
             
     def merge_all_patterns(self, min_depth):
         df = (self.pattern_df
               .query(f"readCount > {min_depth}"))
         
-        df = df.assign(Majority = lambda r: r.loc[:, ("CC", "MM", "HH", "CM" , "MC" , "HC" , "CH" , "MH" , "HM")].idxmax(axis=1))
+        # df = df.assign(Majority = lambda r: r.loc[:, ("CC", "MM", "HH", "CM" , "MC" , "HC" , "CH" , "MH" , "HM")].idxmax(axis=1))
+        df = df.melt(id_vars=["Chromosome", "Start", "End"], 
+                     value_vars=["CC", "MM", "HH", "CM" , "MC" , "HC" , "CH" , "MH" , "HM"],
+                     var_name="Pattern", value_name="Count")
+        
+        print(df)
 
         return MergedSites(df, min_depth)
 
-    def merge_ctcf_patterns(self, min_depth):
+    def merge_chip_patterns(self, min_depth):
         df = (self.chip_patterns
-              .query(f"readCount > {min_depth}")
-              .eval("Hetero = MH + HM")
-              .eval("Hemi = CM + MC + CH + HC"))
+              .query(f"readCount > {min_depth}"))
         
-        df = df.assign(Majority = lambda r: r.loc[:, ("CC", "MM", "HH", "Hetero", "Hemi")].idxmax(axis=1))
+        # df = df.assign(Majority = lambda r: r.loc[:, ("CC", "MM", "HH", "Hetero", "Hemi")].idxmax(axis=1))
+        df = df.melt(id_vars=["Chromosome", "Start", "End", "Strand_ChIP"], 
+                     value_vars=["CC", "MM", "HH", "CM" , "MC" , "HC" , "CH" , "MH" , "HM"],
+                     var_name="Pattern", value_name="Count")
+
+        return MergedSites(df, min_depth)
+    
+    def merge_motif_patterns(self, min_depth):
+        df = (self.motif_patterns
+              .query(f"readCount > {min_depth}"))
+        
+        # df = df.assign(Majority = lambda r: r.loc[:, ("CC", "MM", "HH", "Hetero", "Hemi")].idxmax(axis=1))
+        df = df.melt(id_vars=["Chromosome", "Start", "End", "Strand_Motif"], 
+                     value_vars=["CC", "MM", "HH", "CM" , "MC" , "HC" , "CH" , "MH" , "HM"],
+                     var_name="Pattern", value_name="Count")
 
         return MergedSites(df, min_depth)
            
-    def piechart_data(self):
-        """
-        Outputs a dataframe counting all constutive-modification states. Hetero- and hemi-modification states are grouped. 
-        """
-        df = self.motif_patterns
+    # def piechart_data(self):
+    #     """
+    #     Outputs a dataframe counting all constutive-modification states. Hetero- and hemi-modification states are grouped. 
+    #     """
+    #     df = self.motif_patterns
         
-        pie_data = pd.DataFrame({
-            "Pattern" : ["C", "5mC", "5hmC", "Hemi-dyad", "Hetero-dyad"],
-            "Count" : [df["CC"].sum(), df["MM"].sum(), df["HH"].sum(), 
-                       df["MC"].sum() + df["CM"].sum() + df["HC"].sum() + df["CH"].sum(),
-                       df["MH"].sum() + df["HM"].sum()]
-            })
+    #     pie_data = pd.DataFrame({
+    #         "Pattern" : ["C", "5mC", "5hmC", "Hemi-dyad", "Hetero-dyad"],
+    #         "Count" : [df["CC"].sum(), df["MM"].sum(), df["HH"].sum(), 
+    #                    df["MC"].sum() + df["CM"].sum() + df["HC"].sum() + df["CH"].sum(),
+    #                    df["MH"].sum() + df["HM"].sum()]
+    #         })
 
-        return pie_data
+    #     return pie_data
 
 class MergedSites(PatternFrame):
     def __init__(self, pattern_df, min_depth):
@@ -94,10 +111,12 @@ class MergedSites(PatternFrame):
 
     def piechart_data(self):
         """
-        Outputs a dataframe counting all constitutive-modification states. Hetero- and hemi-modification states are grouped. 
+        Outputs a dataframe counting all constitutive-modification states. Hetero-modification and hemi-methylation states are grouped. 
         """
         df = self.pattern_df
-        pie_data = df["Majority"].value_counts(normalize=True)
+        df = df.replace(["CM", "MC", "CH", "HC", "MH", "HM", "CC", "MM", "HH"], 
+                        ["Hemi", "Hemi", "Hemi", "Hemi", "Hetero", "Hetero", "C", "5mC", "5hmC"])
+        pie_data = df.groupby("Pattern")["Count"].sum().reset_index()
 
         return pie_data
     
@@ -226,25 +245,25 @@ with warnings.catch_warnings():
     
 print(len(chip_merge), "CTCF motifs that overlap summits and peaks")
 
-def motif_intersect(df, **intersect_kwargs):
+def motif_join(df: pd.DataFrame) -> pd.DataFrame:
     """
     Intersects with CTCF motifs - not necessarily those within ChIP peaks. 
     Overlapping motifs are merged. 
     """
     # Loading JASPAR CTCF binding sites 
-    intersect = pr.PyRanges(df, int64=True).intersect(ctcf_motif, strandedness=False, **intersect_kwargs).as_df()
+    intersect = pr.PyRanges(df, int64=True).join(ctcf_motif, strandedness=False, apply_strand_suffix=True, suffix="_Motif").as_df()
 
     assert intersect.loc[:, ("Chromosome", "Start", "End")].duplicated().all() == False
         
     return intersect
     
-def chip_intersect(df, **intersect_kwargs):
+def chip_join(df: pd.DataFrame) -> pd.DataFrame:
     """
     Intersects with CTCF motifs present in ChIP peaks. 
     Note that this joins with CTCF summits to remove adjacent peaks that may not be bound.
     """
     # Loading JASPAR CTCF binding sites 
-    intersect = pr.PyRanges(df, int64=True).intersect(chip_merge, strandedness=False, **intersect_kwargs).as_df()
+    intersect = pr.PyRanges(df, int64=True).join(chip_merge, strandedness=False, apply_strand_suffix=True, suffix="_ChIP").as_df()
 
     assert intersect.loc[:, ("Chromosome", "Start", "End")].duplicated().all() == False
         
@@ -262,50 +281,26 @@ def main(test_run=True, min_depth=5, upset_plot=False):
     with concurrent.futures.ProcessPoolExecutor(len(file_paths)) as load_executor:
         all_duplex_modbeds = [load_executor.submit(read_merge, path, test_run, replicate+1) for replicate, path in enumerate(file_paths)]
         all_duplex_modbeds = [modbed.result() for modbed in all_duplex_modbeds]
-        merged_patterns = [pf.merge_ctcf_patterns(min_depth) for pf in all_duplex_modbeds]
+        merged_motif_patterns = [pf.merge_motif_patterns(min_depth) for pf in all_duplex_modbeds]
 
     fig = plt.figure(figsize=(120/25.4, 89/25.4), dpi=600, layout="constrained")
 
-    all_duplex_pfs = pd.concat([modbed.pattern_df for modbed in all_duplex_modbeds])
+    # all_duplex_pfs = pd.concat([modbed.pattern_df for modbed in all_duplex_modbeds])
     
     # All patterns at CTCF motifs
-    all_motif_patterns = PatternFrame(
-        pr.PyRanges(all_duplex_pfs, int64=True).intersect(ctcf_motif)
-        .as_df().groupby(["Chromosome", "Start", "End"], as_index=True, observed=True)
-        .sum(numeric_only=True)
-        .reset_index()
-        ).merge_all_patterns(min_depth)
-        
-    # Gives the background or expected patterns based on CTCF overlapping sites
-    
-    exp_patterns = (all_motif_patterns.motif_patterns
-                    .as_df()["Majority"]
-                    .value_counts(normalize=True))
-
-    # All patterns at CTCF motifs that overlap peak summits
-    ctcf_summit_patterns =  all_motif_patterns.chip_patterns
-
-    # observed duplex state at motifs overlapping peak summits
-    obs_patterns = ctcf_summit_patterns["Majority"].value_counts()
-
-    obs = obs_patterns.to_numpy()
-    obs_sum = obs.sum()
-
-    exp = exp_patterns.mul(obs_sum)
-    print("Expected patterns at CTCF motifs:\n", exp)
-    print("Observed patterns at CTCF motifs:\n", obs)
-
-    df_l = []
-    for df, kind in zip([exp, obs_patterns], ["Expected", "Observed"]):
-        df = df.reset_index(name="Count").assign(Kind = kind)
-        df_l.append(df)
+    # all_motif_patterns = PatternFrame(
+    #     pr.PyRanges(all_duplex_pfs, int64=True).intersect(ctcf_motif)
+    #     .as_df().groupby(["Chromosome", "Start", "End"], as_index=True, observed=True)
+    #     .sum(numeric_only=True)
+    #     .reset_index()
+    #     ).merge_all_patterns(min_depth)
     
     # print(stats.chisquare(obs_patterns, exp))
     
     # fig = plt.figure(dpi=600, figsize=(14.71/2.54, 8/2.54), 
     #                  layout="constrained")
     # ax=fig.add_subplot()
-# 
+    # 
     # sns.barplot(pd.concat(df_l),
     #             x="index", y="Count",
     #             hue="Kind", hue_order=["Expected", "Observed"], 
@@ -342,14 +337,13 @@ def main(test_run=True, min_depth=5, upset_plot=False):
     "5hmC" : "#43a2ca"
            }
         
-    pie_data = pd.concat([merged_pattern.piechart_data().reset_index(name="Proportion") for merged_pattern in merged_patterns])
-    print(pie_data)
-    exit()
-    pie_data = (pie_data.groupby("index")
-                .mean(numeric_only=True)
-                .reset_index()
-                .replace(["CC", "MM", "HH", "Hetero", "Hemi"], 
-                         ["C", "5mC", "5hmC", "Hetero-dyad", "Hemi-dyad"]))
+    pie_data = pd.concat([merged_pattern.piechart_data() for merged_pattern in merged_motif_patterns])
+
+    pie_data = (pie_data.groupby("Pattern")
+                .sum(numeric_only=True)
+                .reset_index())
+    count_sum = pie_data["Count"].sum()
+    pie_data.eval("Proportion = Count / @count_sum", inplace=True)
     
     ax1.pie(pie_data["Proportion"], 
             labels=pie_data["index"], 
@@ -363,7 +357,7 @@ def main(test_run=True, min_depth=5, upset_plot=False):
     with concurrent.futures.ThreadPoolExecutor(4) as stat_executor:
         mod_combinations = stat_executor.map(lambda pf: (pf.summarise_ctcf_duplex_states()
                                                            .quantify_mod_combinations()),
-                                             merged_patterns)
+                                             merged_motif_patterns)
     mod_combinations_summary = pd.concat([mod_combination.assign(Replicate = i) for i, mod_combination in enumerate(mod_combinations)])
     
     c, m, h = [mod_combinations_summary.groupby("motif_mod").get_group(mod) for mod in ["C", "5mC", "5hmC"]]
@@ -420,7 +414,7 @@ def main(test_run=True, min_depth=5, upset_plot=False):
                                                             .summarise_ctcf_duplex_states()
                                                             .filter_hemi_reads()
                                                             .quantify_strands()), 
-                                              merged_patterns)
+                                              merged_motif_patterns)
 
     hemi_mod_summary = pd.concat([hemi.assign(Replicate = i) for i, hemi in enumerate(hemi_mods_at_ctcf)])
 
@@ -450,7 +444,7 @@ def main(test_run=True, min_depth=5, upset_plot=False):
                                                               .summarise_ctcf_duplex_states()
                                                               .filter_hetero_reads()
                                                               .quantify_strands()), 
-                                                merged_patterns)
+                                                merged_motif_patterns)
 
     hetero_mod_summary = pd.concat([hemi.assign(Replicate = i) for i, hemi in enumerate(hetero_mods_at_ctcf)]).reset_index(drop=True)
 
@@ -523,7 +517,7 @@ def main(test_run=True, min_depth=5, upset_plot=False):
 
 
     with pd.ExcelWriter("data/ctcf/ctcf_intersects.xlsx", mode="w") as writer:
-        for i, pattern in enumerate(merged_patterns):
+        for i, pattern in enumerate(merged_motif_patterns):
             ((pr.PyRanges(pattern.pattern_df, int64=True)
                 .join(chip_merge, apply_strand_suffix=True, suffix="_CTCF"))
                 .as_df()
