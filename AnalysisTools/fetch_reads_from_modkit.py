@@ -11,39 +11,42 @@ class ModkitExtract():
     """
     def __init__(self, path: str):
         self.path = path
-        self._df = None
+        self._cpg_table = None 
+        self.read_table = self.__read_table()
 
     @property
-    def df(self):
-        if self._df == None:
-           self.process_read_table()
-           return self._df
+    def cpg_table(self):
+        if self._cpg_table == None:
+           cpg_table = self.__cpg_table()
+           self._cpg_table = cpg_table
+           return cpg_table
         else: 
-            return self._df
+            return self._cpg_table
+        
+    def __read_table(self):
+        read_table = (pd.read_table(self.path, sep="\t")
+                      .pivot(index=["chrom", "read_id", "ref_position", "ref_strand", "read_length"],
+                             columns="mod_code", values="mod_qual")
+                      .reset_index()
+                      .assign(c = lambda r: round(1 - (r["h"] + r["m"]), 6))  # classify modified bases - modcalls discretised as c, m, and h 
+                      .assign(classification = lambda r: r.loc[:, ("h", "m", "c")].idxmax(axis=1))
+                      .drop(columns=["c", "m", "h"]))  
 
-    def process_read_table(self):
-        # load dataframe and filter to only columns of interest
-        coi = ["chrom", "ref_position", "ref_strand",  "read_id", "mod_code", "mod_qual"]
-        read_table = pd.read_csv(self.path, sep="\t").loc[:, coi]
-
-        # remove unmapped bases
-        read_table = read_table.query("ref_position != -1").reset_index(drop=True).rename(columns={"chrom" : "Chromosome", "ref_strand" : "Strand"})
-        read_table = read_table.pivot(index=["Chromosome", "ref_position", "Strand", "read_id"], columns="mod_code", values="mod_qual").reset_index()
-
-        # classify modified bases - modcalls discretised as c, m, and h 
-        read_table = read_table.assign(c = lambda r: round(1 - (r["h"] + r["m"]), 6))
-        read_table = read_table.assign(classification = lambda r: r.loc[:, ("h", "m", "c")].idxmax(axis=1))        
+        return read_table
+        
+    def __cpg_table(self):
+        cpg_t = self.read_table.query("ref_position != -1") # remove unmapped bases
 
         # change to pyranges default formatting
-        read_table["Start"] = read_table.apply(lambda r: r["ref_position"] if r["Strand"] == "+" else r["ref_position"] - 1, axis=1)
-        read_table = read_table.assign(End = lambda r: r["Start"] + 1)
+        cpg_t["Start"] = cpg_t.apply(lambda r: r["ref_position"] if r["ref_strand"] == "+" else r["ref_position"], axis=1)
+        cpg_t.eval("End = Start + 1", inplace=True)
 
         # remove unnecessary columns
-        read_table = read_table.loc[:, ("Chromosome", "Start", "End", "Strand", "read_id", "classification")]
-        self._df = read_table
-        return ReadTable(read_table)
+        cpg_t = cpg_t.rename(columns={"chrom" : "Chromosome", "ref_strand" : "Strand"})
+        cpg_t = cpg_t.loc[:, ("Chromosome", "Start", "End", "Strand", "read_id", "classification")]
+        return CpGTable(cpg_t)
         
-class ReadTable():
+class CpGTable():
     def __init__(self, df, include_bed=None):
         self.df = df
         self._include_bed = include_bed
@@ -75,9 +78,9 @@ class ReadTable():
 
         annotated_df = annotated_df.query(f"Name == '{gene_name}'")
         new_read_table = annotated_df.loc[:, ("Chromosome", "Start", "End", "Strand", "read_id", "classification")]
-        return GeneReadTable(new_read_table, gene_name)
+        return GeneCpGTable(new_read_table, gene_name)
     
-class GeneReadTable(ReadTable):
+class GeneCpGTable(CpGTable):
     def __init__(self, df, gene_name, include_bed=None):
         super().__init__(df, include_bed)
         self.gene_name = gene_name
@@ -160,6 +163,7 @@ class GeneReadTable(ReadTable):
     def heatmap(self, 
                 minimum_read_proportion: float = None, 
                 min_cpg_proportion: float = None, 
+                fontsize: int = 5,
                 ax=None):
         
         """
@@ -178,7 +182,7 @@ class GeneReadTable(ReadTable):
         
         hm = sns.heatmap(data2d, mask=mask,
                 xticklabels=False, yticklabels=False,
-                cmap=sns.color_palette("Blues", 3),
+                cmap=sns.color_palette("YlGnBu"),
                 cbar=False,
                 ax=ax)
     
@@ -190,9 +194,9 @@ class GeneReadTable(ReadTable):
         chromosome = self.df["Chromosome"].values[0]
 
         ax.set_xticks([left, right], 
-            labels=[chromosome + ": " + str(data2d.columns[0]), str(data2d.columns[-1])], rotation="horizontal")
+            labels=[chromosome + ": " + str(data2d.columns[0]), str(data2d.columns[-1])], rotation="horizontal", fontsize=fontsize)
     
-        ax.set_title(f"{self.gene_name}\nU = {cluster_props['Unmethylated']}; M = {cluster_props['Methylated']}", loc="center", fontsize=5)
+        ax.set_title(f"{self.gene_name}\nU = {cluster_props['Unmethylated']}; M = {cluster_props['Methylated']}", loc="center", fontsize=fontsize)
         ax.set_ylabel(None)
         ax.set_xlabel(None)
 
@@ -222,5 +226,35 @@ class GeneReadTable(ReadTable):
             output_df = annotated_table.replace({"cluster" : {2 : "Methylated", 1 : "Unmethylated"}})
 
         return output_df
-        
 
+    def get_unmethylated_readIDs(self,
+                                 minimum_read_proportion = None,
+                                 min_cpg_proportion = None
+                                 ):
+        
+        """
+        Extracts read IDs from the unmethylated allele. 
+        """
+        gene_table = self.cluster_extract(minimum_read_proportion, min_cpg_proportion)
+        cluster_groups = gene_table.groupby("cluster")
+        read_array = cluster_groups.get_group("Unmethylated")["read_id"].unique()
+
+        read_ids = pd.Series([id for id in read_array])
+
+        return read_ids
+    
+    def get_methylated_readIDs(self,
+                               minimum_read_proportion = None,
+                               min_cpg_proportion = None
+                               ):
+        
+        """
+        Extracts read IDs from the methylated allele. 
+        """
+        gene_table = self.cluster_extract(minimum_read_proportion, min_cpg_proportion)
+        cluster_groups = gene_table.groupby("cluster")
+        read_array = cluster_groups.get_group("Methylated")["read_id"].unique()
+
+        read_ids = pd.Series([id for id in read_array])
+
+        return read_ids
