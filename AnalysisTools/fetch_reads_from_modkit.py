@@ -38,7 +38,7 @@ class ModkitExtract():
         cpg_t = self.read_table.query("ref_position != -1") # remove unmapped bases
 
         # change to pyranges default formatting
-        cpg_t["Start"] = cpg_t.apply(lambda r: r["ref_position"] if r["ref_strand"] == "+" else r["ref_position"], axis=1)
+        cpg_t["Start"] = cpg_t["ref_position"]
         cpg_t.eval("End = Start + 1", inplace=True)
 
         # remove unnecessary columns
@@ -89,11 +89,13 @@ class GeneCpGTable(CpGTable):
         self._cluster_table = self.__generate_flat_clusters()
     
     def __generate_read_matrix(self, 
-                             minimum_read_proportion: float = 0.1, 
-                             min_cpg_proportion: float = 0.15):
+                               minimum_read_proportion: float = 0.1, 
+                               min_cpg_proportion: float = 0.15):
         df = self.df 
         read_matrix = df.pivot(index="read_id", columns="Start", values="classification")
         read_matrix = read_matrix.replace(["c", "m", "h"], [0, 1, 2])
+
+        
         # first: remove CpGs present in fewer than the minimum count of reads
         total_reads = len(read_matrix.index)
         read_matrix = read_matrix.dropna(thresh=minimum_read_proportion*total_reads, 
@@ -125,16 +127,18 @@ class GeneCpGTable(CpGTable):
         return 
     
     def clustermap(self, 
-                   minimum_read_proportion: float = None, 
-                   min_cpg_proportion: float = None,
+                   minimum_read_proportion: float = 0.1, 
+                   min_cpg_proportion: float = 0.15,
                    quiet: bool = False):
         """
         Plot clusters of reads within the read table using a seaborn clustermap. Image is figure level. For axes level plotting use 'heatmap()'.
 
-        :param float minimum_read_proportion: CpG sites must be present in at least this proportion of all reads in the dataframe (default: 0.05)
-        :param float min_cpg_proportion: Reads must cover at least this proportion of all CpG sites in the dataframe (default: 0.05).
+        minimum_read_proportion : float 
+            CpG sites must be present in at least this proportion of all reads in the dataframe (default: 0.1)
+        min_cpg_proportion : float 
+            Reads must cover at least this proportion of all CpG sites in the dataframe (default: 0.15).
         """
-        if minimum_read_proportion or min_cpg_proportion:
+        if minimum_read_proportion != 0.1 or min_cpg_proportion != 0.15:
             self.__update_matrices(minimum_read_proportion, min_cpg_proportion)
 
         cm = sns.clustermap(self._read_matrix.fillna(-1), 
@@ -161,16 +165,18 @@ class GeneCpGTable(CpGTable):
         return cm
     
     def heatmap(self, 
-                minimum_read_proportion: float = None, 
-                min_cpg_proportion: float = None, 
+                minimum_read_proportion: float = 0.1, 
+                min_cpg_proportion: float = 0.15, 
                 fontsize: int = 5,
                 ax=None):
         
         """
         Plot clusters of reads within the read table using a seaborn heatmap. The axes-level equivalent of 'clustermap()'.
 
-        :param float minimum_read_proportion: CpG sites must be present in at least this proportion of all reads in the dataframe (default: 0.05)
-        :param float min_cpg_proportion: Reads must cover at least this proportion of all CpG sites in the dataframe (default: 0.05).
+        minimum_read_proportion : float 
+            CpG sites must be present in at least this proportion of all reads in the dataframe (default: 0.1)
+        min_cpg_proportion : float 
+            Reads must cover at least this proportion of all CpG sites in the dataframe (default: 0.15).
         """
         data2d = self.clustermap(minimum_read_proportion, 
                                  min_cpg_proportion,
@@ -195,6 +201,7 @@ class GeneCpGTable(CpGTable):
 
         ax.set_xticks([left, right], 
             labels=[chromosome + ": " + str(data2d.columns[0]), str(data2d.columns[-1])], rotation="horizontal", fontsize=fontsize)
+        ax.tick_params("x", bottom=False)
     
         ax.set_title(f"{self.gene_name}\nU = {cluster_props['Unmethylated']}; M = {cluster_props['Methylated']}", loc="center", fontsize=fontsize)
         ax.set_ylabel(None)
