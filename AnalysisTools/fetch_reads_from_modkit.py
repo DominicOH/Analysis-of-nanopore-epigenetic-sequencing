@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 
 class ModkitExtract():
     """
-    Class for working with the tsv output of Modkit Extract. 
+    Class for working with the tsv output of Modkit Extract --read-calls option. 
     """
     def __init__(self, path: str):
         self.path = path
@@ -24,18 +24,20 @@ class ModkitExtract():
             return self._cpg_table
         
     def __read_table(self):
-        read_table = (pd.read_table(self.path, sep="\t")
-                      .pivot(index=["chrom", "read_id", "ref_position", "ref_strand", "read_length"],
-                             columns="mod_code", values="mod_qual")
-                      .reset_index()
-                      .assign(c = lambda r: round(1 - (r["h"] + r["m"]), 6))  # classify modified bases - modcalls discretised as c, m, and h 
-                      .assign(classification = lambda r: r.loc[:, ("h", "m", "c")].idxmax(axis=1))
-                      .drop(columns=["c", "m", "h"]))  
+        read_table = (pd.read_table(self.path).loc[:, ("read_id", "chrom", "ref_position", "ref_strand", "read_length", "call_code", "fail")]
+                      .replace({"call_code" : "-"}, "c"))
+        
+        # remove failed modcalls
+        read_table = (read_table.mask((read_table["fail"] == True))
+                      .dropna()
+                      .drop(columns=["fail"])) 
+        # remove unmapped reads
+        read_table = read_table.mask((read_table["ref_position"] == -1)).dropna()
 
         return read_table
         
     def __cpg_table(self):
-        cpg_t = self.read_table.query("ref_position != -1") # remove unmapped bases
+        cpg_t = self.read_table
 
         # change to pyranges default formatting
         cpg_t["Start"] = cpg_t["ref_position"]
@@ -43,7 +45,7 @@ class ModkitExtract():
 
         # remove unnecessary columns
         cpg_t = cpg_t.rename(columns={"chrom" : "Chromosome", "ref_strand" : "Strand"})
-        cpg_t = cpg_t.loc[:, ("Chromosome", "Start", "End", "Strand", "read_id", "classification")]
+        cpg_t = cpg_t.loc[:, ("Chromosome", "Start", "End", "Strand", "read_id", "call_code", "read_length")]
         return CpGTable(cpg_t)
         
 class CpGTable():
@@ -77,7 +79,7 @@ class CpGTable():
         annotated_df = read_pr.join(include_bed, False, suffix="_Gene").as_df()
 
         annotated_df = annotated_df.query(f"Name == '{gene_name}'")
-        new_read_table = annotated_df.loc[:, ("Chromosome", "Start", "End", "Strand", "read_id", "classification")]
+        new_read_table = annotated_df.loc[:, ("Chromosome", "Start", "End", "Strand", "read_id", "call_code")]
         return GeneCpGTable(new_read_table, gene_name)
     
 class GeneCpGTable(CpGTable):
@@ -92,10 +94,9 @@ class GeneCpGTable(CpGTable):
                                minimum_read_proportion: float = 0.1, 
                                min_cpg_proportion: float = 0.15):
         df = self.df 
-        read_matrix = df.pivot(index="read_id", columns="Start", values="classification")
+        read_matrix = df.pivot(index="read_id", columns="Start", values="call_code")
         read_matrix = read_matrix.replace(["c", "m", "h"], [0, 1, 2])
 
-        
         # first: remove CpGs present in fewer than the minimum count of reads
         total_reads = len(read_matrix.index)
         read_matrix = read_matrix.dropna(thresh=minimum_read_proportion*total_reads, 
@@ -224,8 +225,8 @@ class GeneCpGTable(CpGTable):
         
         annotated_table = pd.merge(self.df, read_matched_with_cluster, "inner")
 
-        c2_meth = annotated_table.groupby("cluster")["classification"].value_counts()[(2, "m")]
-        c1_meth = annotated_table.groupby("cluster")["classification"].value_counts()[(1, "m")]
+        c2_meth = annotated_table.groupby("cluster")["call_code"].value_counts()[(2, "m")]
+        c1_meth = annotated_table.groupby("cluster")["call_code"].value_counts()[(1, "m")]
 
         if c1_meth > c2_meth:
             output_df = annotated_table.replace({"cluster" : {1 : "Methylated", 2 : "Unmethylated"}})
