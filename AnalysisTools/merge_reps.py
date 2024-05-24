@@ -1,6 +1,6 @@
 import argparse
 import pandas as pd
-from AnalysisTools import read_modbed, common 
+from AnalysisTools import common 
 from AnalysisTools.helpers import timer
 
 def load_data(path, modbase=None, dry_run=False, min_depth=1):
@@ -10,7 +10,7 @@ def load_data(path, modbase=None, dry_run=False, min_depth=1):
         nrows=None
 
     print(f"Loading {path}.")
-    df = read_modbed.openReps_Parallel(path, modbase=modbase, min_depth=min_depth, include_raw_counts=True, nrows=nrows)
+    df = common.openReps(path, modbase=modbase, min_depth=min_depth, include_raw_counts=True, nrows=nrows)
     print("Removing non-autosomal CpG sites.")
     df = common.onlyAutosomal(df)
     
@@ -49,7 +49,7 @@ def group_position(df):
         raise ValueError("Can't determine type of data.")
     
     print("Grouping CpG positions.")
-    print(f"Aggregating on {aggfuncs.keys}.")
+    print(f"Aggregating on {aggfuncs.keys()}.")
 
     grouped_positions = df.groupby(["Chromosome", "Start", "End"], observed=False).agg(aggfuncs).reset_index()
     grouped_positions = grouped_positions.assign(**percent_cols)
@@ -64,21 +64,19 @@ def merge_reps(inpath, outpath, modbase=None, dry_run=False, min_depth=1):
 
     return grouped_positions.to_csv(outpath, sep="\t", header=False, index=False)
 
-
 ##### main function ##### 
 
 if  __name__=="__main__":
     parser = argparse.ArgumentParser(
                         prog = "merge_reps",
                         description = "Merges two bedMethyl or bismark files.")
-    parser.add_argument("filenames", action="append", nargs="+", required=True)
+    parser.add_argument("filenames", action="store", nargs="+")
     parser.add_argument("-o", "--outpath", action="store", required=True)
     parser.add_argument("--mod_type", action="store", required=False)
     parser.add_argument("-d ", "--dryrun", action="store_true", dest="dryrun", required=False, help="Whether a test output is produced.") 
     parser.add_argument("--min_depth", action="store", required=False, default=1)
 
     args = parser.parse_args()
-
 
     merge_reps(args.filenames, args.outpath, args.mod_type, args.dryrun, args.min_depth)
     print(f"Done.")  
