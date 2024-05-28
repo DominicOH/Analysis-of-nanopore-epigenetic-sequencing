@@ -7,6 +7,7 @@ import numpy as np
 import concurrent.futures
 import seaborn as sns
 import matplotlib as mpl
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from scipy import stats
 import gc
 
@@ -27,11 +28,10 @@ def remove_low_count_tiles(tiled_df, threshold=5):
     tiled_df = tiled_df.loc[tiled_df.eval("CpG_count >= @threshold")]
     return tiled_df.drop(columns="CpG_count")
 
-def assign_enrichment(grouped_df):
+def calculate_zscore(grouped_df):
     grouped_df = grouped_df.eval("tile_5hmC = (N_5hmC/readCount)*100")
-    mean = grouped_df["tile_5hmC"].mean()
+    grouped_df["zscore"] = stats.zscore(grouped_df["tile_5hmC"])
 
-    grouped_df = grouped_df.assign(enrichment = lambda r: np.log2((r["tile_5hmC"]+1)/(mean+1)))
     return grouped_df.drop(columns=["N_5hmC", "readCount"])
 
 def read_narrowPeak(path):
@@ -86,7 +86,9 @@ def fig_main(dryrun=True):
         nanopore_average, tab_average = merge_executor.map(common.merge_positions, [nano_modbeds, tab_modbeds])
         nanopore_average, tab_average = [df.reset_index() for df in [nanopore_average, tab_average]]
     
+    print("Loaded data")
     del nano_modbeds, tab_modbeds
+    
     with concurrent.futures.ProcessPoolExecutor(2) as tile_executor:
         print("Tiling Nanopore WGS reference data.")
         tile_dfs = tile_executor.map(tile_wgs, [nanopore_average, tab_average])
@@ -95,56 +97,89 @@ def fig_main(dryrun=True):
     del nanopore_average, tab_average
     gc.collect()
 
-    nanopore_wgs_tiles, tab_tiles = [assign_enrichment(df) for df in tile_dfs]
-    kde_background = pd.merge(nanopore_wgs_tiles, tab_tiles, on=["Chromosome", "Start", "End"], suffixes=["_Nanopore", "_TAB"])
-    
+    nanopore_wgs_tiles, tab_tiles = [calculate_zscore(df) for df in tile_dfs]
+    kde_background = pd.merge(nanopore_wgs_tiles, tab_tiles, on=["Chromosome", "Start", "End"], suffixes=["_Nanopore", "_TAB"])                
+
     peak_overlay = (pr.PyRanges(kde_background)
-                    .join(public_hmedip_pr, report_overlap=True)
+                    .join(public_hmedip_pr, report_overlap=True, suffix="_Peak")
                     .as_df()
                     .sort_values("Overlap", ascending=False)
-                    .groupby(["Chromosome", "Start", "End"], observed=True)
-                    .head(1))
+                    .groupby(["Chromosome", "Start_Peak", "End_Peak", "Replicate"], observed=True)
+                    .head(1)
+                    .eval("Peak_length = End_Peak - Start_Peak")
+                    .query("Overlap >= (Peak_length / 2)")) # At least half the peak must sit in the region)
 
-    jg = sns.JointGrid(height=(120/25.4))
+    jg = sns.JointGrid(height=(120/25.4), xlim=(-3, 7), ylim=(-3, 7))
+    # jg.figure.set_size_inches(180/25.4, 120/25.4)
+    jg.figure.set_constrained_layout(True)
+    
     sns.set_style("ticks")
 
     mpl.rc('font', size=5)
 
+    print("Plotting")
+        
+    sns.kdeplot(kde_background, x="zscore_TAB", y="zscore_Nanopore", 
+                ax=jg.ax_joint, color="#9ecae1", fill=True)
+
     sns.scatterplot(peak_overlay.sort_values("fold_enrichment"),
-                        x="enrichment_TAB",
-                        y="enrichment_Nanopore",
+                        x="zscore_TAB",
+                        y="zscore_Nanopore",
                         palette="OrRd", 
+                        marker=".",
                         size="fold_enrichment", sizes=(.5, 10),
                         hue="fold_enrichment",
                         ax=jg.ax_joint)
 
-    sns.kdeplot(peak_overlay.sort_values("fold_enrichment"),
-                        x="enrichment_TAB",
-                        color="#e34a33",
-                        ax=jg.ax_marg_x)
+    sns.histplot(peak_overlay,
+                 x="zscore_TAB",
+                 color="#e34a33",
+                 ax=jg.ax_marg_x)
 
-    sns.kdeplot(peak_overlay.sort_values("fold_enrichment"),
-                        y="enrichment_Nanopore",
-                        color="#e34a33",
-                        ax=jg.ax_marg_y)
-    
-    sns.kdeplot(kde_background, x="enrichment_TAB", y="enrichment_Nanopore", 
-                ax=jg.ax_joint, color="#9ecae1")
+    sns.histplot(peak_overlay,
+                 y="zscore_Nanopore",
+                 color="#e34a33",
+                 ax=jg.ax_marg_y)
       
-    jg.ax_joint.axhline(1, ls=":", c="grey", lw=0.8)
-    jg.ax_joint.axvline(1, ls=":", c="grey", lw=0.8)
+    jg.ax_joint.axhline(kde_background["zscore_TAB"].mean(), ls=":", c="grey", lw=0.8)
+    jg.ax_joint.axvline(kde_background["zscore_Nanopore"].mean(), ls=":", c="grey", lw=0.8)
+    jg.set_axis_labels(xlabel="Site modification (%) Z-Score (TAB)", 
+                       ylabel="Site modification (%) Z-Score (Nanopore)", size=7)
     
-    jg.set_axis_labels(xlabel="Mean TAB Enrichment", 
-                       ylabel="Mean Nanopore Enrichment", size=7)
+    axin = inset_axes(jg.ax_joint, width="20%", height="20%", loc="upper right")
+    axin.tick_params("both", left=False, bottom=False, labelleft=False, labelbottom=False)
+    axin.set_xlim((-3, 7))
+    axin.set_ylim((-3, 7))
+
+    sns.kdeplot(kde_background, x="zscore_TAB", y="zscore_Nanopore", 
+                ax=axin, color="#9ecae1", fill=True)
+    
+    axin.axhline(kde_background["zscore_TAB"].mean(), ls=":", c="grey", lw=0.8)
+    axin.axvline(kde_background["zscore_Nanopore"].mean(), ls=":", c="grey", lw=0.8)
+
+    stat = stats.spearmanr(kde_background["zscore_Nanopore"], 
+                           kde_background["zscore_TAB"])
+    
+    print("Spearman (tiles):", stat.pvalue)
+        
+    if stat.pvalue < 0.001:
+        star = "***"
+    elif stat.pvalue < 0.01:
+        star = "**"
+    elif stat.pvalue < 0.05:
+        star = "*"
+    
+    axin.annotate(f"$\\rho$={round(stat.statistic, 3)}$^{{{star}}}$", 
+                  xy=(.5, 5.5))
     
     # jg.set(yticklabels={"size" : 7}, xticklabels={"size" : 7})
 
     sns.move_legend(jg.ax_joint, "lower right", title="hMeDIP fold\nenrichment")
-    print(len(peak_overlay.query("enrichment_Nanopore > 1"))/len(peak_overlay))
-    print(len(peak_overlay.query("enrichment_TAB > 1"))/len(peak_overlay))
+    print("Peaks over Z0 (Nanopore):", len(peak_overlay.query("zscore_Nanopore > 0"))/len(peak_overlay))
+    print("Peaks over Z0 (TAB):", len(peak_overlay.query("zscore_TAB > 0"))/len(peak_overlay))
 
-    print("Spearman:", stats.spearmanr(peak_overlay["enrichment_Nanopore"], 
-                                       peak_overlay["fold_enrichment"]))
+    print("Spearman (peaks vs. Nanopore):", stats.spearmanr(peak_overlay["zscore_Nanopore"], 
+                                                            peak_overlay["fold_enrichment"]))
 
     if dryrun:
         jg.savefig("plots/tests/pcr_hmedip_comparison.png", dpi=600)
