@@ -1,6 +1,6 @@
 # Analysis-of-nanopore-epigenetic-sequencing
 
-These scripts and notebooks contain code used in the analysis of nanopore sequence data for the publication: Direct detection of 3-phase cytosine modification states in nanopore sequencing. 
+These scripts and notebooks contain code used in the analysis of nanopore sequence data for the publication: Direct detection of 5mC and 5hmC using nanopore sequence data (name TBD). 
 
 Data produced for these analyses has not yet been made publicly available. 
 
