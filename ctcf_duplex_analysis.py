@@ -292,10 +292,6 @@ def main(test_run=True, min_depth=10, upset_plot=False):
                                                                          all_summits.eval("MM + HM + CM"))
     all_summits["All_Motif_5hmC"] = all_summits.eval("HM + HH + HC").where((all_summits["Strand_ChIP"] == "+"), 
                                                                             all_summits.eval("MH + HH + CH"))
-
-    # all_motifs = np.sum([all_summits["All_Motif_C"].sum(), 
-    #                      all_summits["All_Motif_5mC"].sum(), 
-    #                      all_summits["All_Motif_5hmC"].sum()])
     
     pie_all_data = pd.DataFrame({"mod" : ["C:C", "Hemi-C", "5mC" , "5hmC"],
                                  "count" : [all_summits["CC"].sum(),
@@ -303,13 +299,11 @@ def main(test_run=True, min_depth=10, upset_plot=False):
                                             all_summits["All_Motif_5mC"].sum(), 
                                             all_summits["All_Motif_5hmC"].sum()]})
     
-    all_summits["Hemi_Motif_5mC"] = all_summits["MC"] 
-    all_summits["Hemi_Motif_5mC"] = all_summits["Hemi_Motif_5mC"].where((all_summits["Strand_ChIP"] == "+"), 
-                                                                         all_summits["CM"])
+    all_summits["Hemi_Motif_5mC"] = all_summits["CM"].where((all_summits["Strand_ChIP"] == "+"), 
+                                                                         all_summits["MC"])
 
-    all_summits["Hemi_Motif_5hmC"] = all_summits["HC"] 
-    all_summits["Hemi_Motif_5hmC"] = all_summits["Hemi_Motif_5hmC"].where((all_summits["Strand_ChIP"] == "+"), 
-                                                                           all_summits["CH"])
+    all_summits["Hemi_Motif_5hmC"] = all_summits["CH"].where((all_summits["Strand_ChIP"] == "+"), 
+                                                                           all_summits["HC"])
     mini_pie_data = pd.DataFrame({"mod" : ["C:5mC", "C:5hmC"],
                                   "count" : [all_summits["Hemi_Motif_5mC"].sum(), 
                                              all_summits["Hemi_Motif_5hmC"].sum()]})
