@@ -1,0 +1,225 @@
+import pandas as pd
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+from matplotlib.gridspec import GridSpec
+import seaborn as sns
+import concurrent.futures
+import argparse
+from AnalysisTools.helpers import timer
+import string
+import numpy as np
+from scipy.stats import contingency
+from scipy import stats
+import AnalysisTools.ctcf_site_tools as ctcf
+import scikit_posthocs as sp
+
+@timer
+def main(test_run=True, min_depth=1, upset_plot=False, filter_distance=np.inf):
+
+    root_path = "data/duplex_data/"
+    files = ["cbm2/CBM_2_rep1.masked.bed", "cbm2/CBM_2_rep2.masked.bed",
+             "cbm3/CBM_3_rep1.sorted.bam.bed", "cbm3/CBM_3_rep2.sorted.bam.bed"]
+
+    file_paths = [root_path + file for file in files]
+
+    with concurrent.futures.ProcessPoolExecutor(len(file_paths)) as load_executor:
+        all_duplex_modbeds = [load_executor.submit(ctcf.read_merge, path, test_run, replicate+1) for replicate, path in enumerate(file_paths)]
+        all_duplex_modbeds = [modbed.result() for modbed in all_duplex_modbeds]
+
+    with concurrent.futures.ProcessPoolExecutor(len(all_duplex_modbeds)) as violin_executor:
+        violin_futures = [violin_executor.submit(modbed.site_summit_distances, min_depth) for modbed in all_duplex_modbeds]
+        violin_concat = ctcf.DistDF(pd.concat([future.result() for future in violin_futures])
+                                    .groupby(["Pattern", "Distance"], observed=True)
+                                    .agg({"Count" : sum})
+                                    .reset_index())
+        
+        violin_reads = violin_concat.explode_reads().reset_index(drop=True)
+
+    violin_reads["abs"] = abs(violin_reads["Distance"])
+    violin_reads = violin_reads.loc[violin_reads["abs"] <= filter_distance]
+    print(violin_reads.groupby("Pattern")["abs"].median())
+
+    patterns = violin_reads['Pattern'].unique()
+    groups = [violin_reads['abs'][violin_reads['Pattern'] == pattern] for pattern in patterns]
+    for pattern in patterns:
+        x = np.where(violin_reads["Pattern"] == pattern, True, False)
+        y = violin_reads["abs"]
+        test = stats.pointbiserialr(x, y)
+        print(pattern, test)        
+
+    print(stats.kruskal(*groups))
+    dunn_result = sp.posthoc_dunn(violin_reads, val_col='abs', group_col='Pattern', p_adjust='bonferroni')
+    print(dunn_result)
+
+    with concurrent.futures.ThreadPoolExecutor(len(all_duplex_modbeds)) as merge_executor:
+        merged_motif_patterns = merge_executor.map(lambda pf: pf.merge_motif_patterns(min_depth), all_duplex_modbeds)
+
+    with concurrent.futures.ThreadPoolExecutor(len(all_duplex_modbeds)) as merge_executor:
+        merged_chip_patterns = merge_executor.map(lambda pf: pf.merge_chip_patterns(min_depth), all_duplex_modbeds)
+ 
+    fig = plt.figure(figsize=(89/25.4, 120/25.4), dpi=600, layout="constrained")
+
+    sns.set_style("ticks")
+    mpl.rc('font', size=5)
+
+    gs = GridSpec(4, 3, fig)
+
+    ax1 = fig.add_subplot(gs[0, 0])
+    ax2 = fig.add_subplot(gs[0, 1:])
+    ax3 = fig.add_subplot(gs[1, :])
+    ax4 = fig.add_subplot(gs[2:, :])
+
+    ax3.axhline(0, ls=":", c="grey")
+    sns.violinplot(violin_reads, 
+                   x="Pattern", y="Distance", hue="Pattern",
+                   palette="YlGnBu",
+                   order=["C:C", "5mC:5mC", "5hmC:5hmC", "C:5mC", "C:5hmC", "5mC:5hmC"],    
+                   ax=ax3)
+    
+    ax3.set_ylabel("Distance to summit (bp)")
+    ax3.set_xlabel("Density of CpGs")
+
+    with concurrent.futures.ThreadPoolExecutor(4) as pie_executor:
+        motif_basecalls = pie_executor.map(lambda pf: pf.piechart_data(), merged_motif_patterns)
+        motif_basecalls = pd.concat([ctcf.eval_basecall_proportions(pie.assign(Replicate = i)) for i, pie in enumerate(motif_basecalls)])
+
+    with concurrent.futures.ThreadPoolExecutor(4) as pie_executor:
+        chip_patterns = pie_executor.map(lambda pf: pf.piechart_data(), merged_chip_patterns)
+        chip_basecalls = pd.concat([ctcf.eval_basecall_proportions(pie.assign(Replicate = i)) for i, pie in enumerate(chip_patterns)])
+        
+    root_path = "data/duplex_data/patterns/"
+    files = ["CBM_2_rep1.masked.bed.duplex_patterns.tsv", "CBM_3_rep1.sorted.bam.bed.duplex_patterns.tsv",
+             "CBM_2_rep2.masked.bed.duplex_patterns.tsv", "CBM_3_rep2.sorted.bam.bed.duplex_patterns.tsv"]
+
+    file_paths = [root_path + file for file in files]
+
+    genome_basecall_proportions = [(pd.read_table(path)
+                        .rename(columns={"N_Pattern" : "Count"})
+                        .replace(["-,m,C", "m,-,C", "-,h,C", "h,-,C", "m,h,C", "h,m,C", "-,-,C", "m,m,C", "h,h,C"], 
+                                 ["C:5mC", "C:5mC", "C:5hmC", "C:5hmC", "5mC:5hmC", "5mC:5hmC", "C:C", "5mC:5mC", "5hmC:5hmC"])
+                        .groupby(["Pattern"])["Count"]
+                        .sum()
+                        .reset_index()
+                        .assign(Replicate = i))
+                        for i, path in enumerate(file_paths)]
+       
+    genome_basecalls = pd.concat(map(ctcf.eval_basecall_proportions, genome_basecall_proportions))
+    
+    motif_basecalls["Type"], chip_basecalls["Type"], genome_basecalls["Type"] = "CTCF motif", "ChIP summit", "Genome average"
+    motif_vs_chip = pd.concat([chip_basecalls, motif_basecalls, genome_basecalls]).reset_index()
+
+    sns.barplot(motif_vs_chip,
+                x="Pattern", y="Proportion", 
+                hue="Type",
+                palette="PuBuGn",
+                err_kws={'linewidth': 0.8},
+                capsize=.5,
+                errorbar=("sd", 1),
+                order=["C:C", "5mC:5mC"],
+                hue_order=["Genome average", "CTCF motif", "ChIP summit"],
+                ax=ax1)
+
+    sns.move_legend(ax1, "upper center", frameon=False, title=None, ncols=3, bbox_to_anchor=(2, 1.2))
+    ax1.get_legend().set_in_layout(False)
+    ax1.set_ylabel("Proportion of duplex base-calls")   
+
+    sns.barplot(motif_vs_chip,
+            x="Pattern", y="Proportion", 
+            hue="Type",
+            palette="PuBuGn",
+            err_kws={'linewidth': 0.8},
+            capsize=.5,
+            legend=False,
+            errorbar=("sd", 1),
+            order=["5hmC:5hmC", "C:5mC", "C:5hmC", "5mC:5hmC"],
+            hue_order=["Genome average", "CTCF motif", "ChIP summit"],
+            ax=ax2)
+    
+    ax2.set_ylabel(None)
+
+    for ax in [ax1, ax2]:
+        ax.set_xlabel(None) # type: ignore
+        
+    
+    ax4.tick_params("both", bottom=False, labelbottom=False, left=False, labelleft=False)
+
+    for i, ax in enumerate([ax1, ax3, ax4]):
+        ax.set_title(string.ascii_lowercase[i], fontdict={"fontweight" : "bold"}, loc="left")        
+
+    sns.despine()
+    sns.despine(ax=ax4, left=True, bottom=True)
+        
+    if test_run:
+        fig.savefig("plots/tests/ctcf_duplex_analysis.png")
+
+    else:
+        fig.savefig("plots/ctcf_duplex_analysis.png")
+        fig.savefig("plots/ctcf_duplex_analysis.svg")
+
+    # Stats for ax1 and ax2
+
+    def comparer(exp, obs):
+        merged_replicates = motif_vs_chip.groupby(["Type", "Pattern"]).sum(numeric_only=True)
+        obs = merged_replicates.groupby("Type").get_group(obs).reset_index()
+        exp = merged_replicates.groupby("Type").get_group(exp).reset_index()
+
+        exp_sum = exp["Count"].sum()
+        exp["Proportion"] = exp.eval("Count / @exp_sum")
+
+        obs_sum = obs["Count"].sum()
+        exp_freq = exp["Proportion"].mul(obs_sum)
+
+        # print(obs_sum, exp_freq.sum())
+
+        assert round(exp_freq.sum()) == obs_sum
+
+        data = np.array([obs["Count"].to_numpy(), exp_freq.to_numpy()])
+        data = data.astype(int)
+
+        # print(data)
+
+        v = contingency.association(data)
+        stat, p, dof, _ = stats.chi2_contingency(data, lambda_="log-likelihood")        
+        return v, p
+    
+    print("Genome vs. Genome sanity test :", comparer("Genome average", "Genome average"))
+    print("Genome vs. Motif :", comparer("Genome average", "CTCF motif"))
+    print("Genome vs. Summit :", comparer("Genome average", "ChIP summit"))
+    print("Motif vs. Summit :", comparer("CTCF motif", "ChIP summit"))
+
+##### Main function #####
+
+if __name__=="__main__":
+    parser = argparse.ArgumentParser(
+                        prog = "ctcf_duplex_analysis",
+                        description = "Analyses duplex modified basecalls.")
+    parser.add_argument("-t ", "--testrun", 
+                        action="store_true", 
+                        dest="test_run", 
+                        required=False,
+                        help="Whether a test output is produced.") 
+    parser.add_argument("--min_depth", 
+                        dest="min_depth", 
+                        default=1,
+                        required=False,
+                        help="Whether to filter the dataset by depth at CpG.")
+    parser.add_argument("--upset_plot", 
+                        dest="upset_plot", 
+                        action="store_true",
+                        default=False,
+                        help="Whether to filter the dataset by depth at CpG.")
+    parser.add_argument("--filter_distance", 
+                        dest="filter_distance",
+                        type=np.int64, 
+                        help="Whether to filter distance CpG dyads when comparing distance to summit.")
+
+
+    args = parser.parse_args()
+
+    if args.test_run:
+        test_run = True
+    else: 
+        test_run = False
+
+    args = parser.parse_args()
+    main(test_run, args.min_depth, args.upset_plot, args.filter_distance)    
