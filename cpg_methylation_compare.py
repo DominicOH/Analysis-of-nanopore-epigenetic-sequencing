@@ -4,12 +4,15 @@ import gc
 import matplotlib.pyplot as plt
 import seaborn as sns
 import matplotlib as mpl
+from matplotlib.patches import Patch
+from matplotlib.lines import Line2D
 from matplotlib.gridspec import GridSpec
 from AnalysisTools.helpers import timer
 from AnalysisTools.common import *
 import string
 from compare_features import *
 from AnalysisTools import annotation_features
+from scipy import stats
 
 def prep_dev_plot(df, bs_method, mod):
     df = (df.reset_index()
@@ -18,43 +21,24 @@ def prep_dev_plot(df, bs_method, mod):
             .assign(Mod = mod))
     return df
 
-def print_means(df_list):
-    mean_dict = {}
-    for col in ["5mC", "5hmC"]:
-        try:
-            readcount_tot = [df["readCount"].sum() for df in df_list]
-            total_mods = [df[f"N_{col}"].sum() for df in df_list]
-            mean_value = np.mean(np.divide(total_mods, readcount_tot))*100
-
-            mean_dict.update({col : mean_value})
-        except:
-            # print(col, "not found in", df_list[0].columns)
-            pass
-    return mean_dict
-
 def annotate_wrapper(df_list: list[pd.DataFrame], annotator: annotation_features.Annotator):
-    def calculate_zscore(df: pd.DataFrame):
-        """
-        Z-Score is here calculated before annotation. Z-Score here calculated CpG-wise rather than element-wise. 
-        """
-
-        for col in ["5mC", "5hmC"]:
-            df.eval(f"percentMeth_{col} = (N_{col}/readCount)*100", inplace=True)                
-            df[f"zscore_{col}"] = stats.zscore(df[f"percentMeth_{col}"])
-        return df
-
-    with concurrent.futures.ThreadPoolExecutor(len(df_list)) as executor:
-        zscored_dfs = executor.map(calculate_zscore, df_list)
-
     with concurrent.futures.ThreadPoolExecutor(4) as executor:
-        annotated_all = executor.map(annotator.annotate, zscored_dfs)
+        annotated_all = executor.map(annotator.annotate, df_list)
         annotated_all = pd.concat([(annotation.drop(columns=["Strand"], errors="ignore").assign(Replicate = i+1))
                                    for i, annotation in enumerate(annotated_all)])
         
     grouped_all = annotated_all.groupby(["Chromosome", "Start", "End", "feature_type"], 
-                                      observed=True)
-    rep_summary = grouped_all.mean(numeric_only=True)
+                                        observed=True)
+    # now taking sum of all 
+    rep_summary = grouped_all.sum(numeric_only=True).reset_index()
 
+    for col in ["5mC", "5hmC"]:
+        rep_summary.eval(f"percentMeth_{col} = (N_{col}/readCount)", inplace=True)
+        rep_summary[f"percentMeth_{col}"] = rep_summary[f"percentMeth_{col}"].where(rep_summary[f"percentMeth_{col}"] <= 1, 1)        
+        rep_summary[f"asin_{col}"] = np.arcsin(rep_summary[f"percentMeth_{col}"])
+        # zscore is calculated element-wise           
+        rep_summary[f"zscore_{col}"] = stats.zscore(rep_summary[f"asin_{col}"])
+        
     return rep_summary
 
 @timer
@@ -65,13 +49,15 @@ def fig_main(figsize, fontsize, dryrun=True):
     sns.set_style("ticks")
     mpl.rc('font', size=fontsize)
 
-    gs = GridSpec(2, 3, fig)
+    gs = GridSpec(2, 3, fig, height_ratios=(1, 1.3))
 
     ax1 = fig.add_subplot(gs[0, 0])
     ax2 = fig.add_subplot(gs[0, 1])
     ax3 = fig.add_subplot(gs[0, 2])
-    ax4 = fig.add_subplot(gs[1, :2])
-    ax5 = fig.add_subplot(gs[1, 2])
+    sgs = gs[1, :].subgridspec(1, 5)
+    ax4 = fig.add_subplot(sgs[0, :2])
+    ax5 = fig.add_subplot(sgs[0, 2])
+    ax6 = fig.add_subplot(sgs[0, 3:])
 
     # Initial data collection # 
 
@@ -100,36 +86,62 @@ def fig_main(figsize, fontsize, dryrun=True):
     [modbed.rename(columns={"N_mod" : "N_5mC"}, inplace=True) for modbed in modbeds_list[2]]
     
     feature_annotator = annotation_features.Annotator("/mnt/data1/doh28/analyses/mouse_hydroxymethylome_analysis/feature_references/feature_comparison/")
+    gene_annotator = annotation_features.Annotator("/mnt/data1/doh28/analyses/mouse_hydroxymethylome_analysis/feature_references/genic/")
     cgi_annotator = annotation_features.Annotator("/mnt/data1/doh28/analyses/mouse_hydroxymethylome_analysis/feature_references/cgi/")
 
     nanopore_annotated = (annotate_wrapper(modbeds_list[0], feature_annotator)
                           .reset_index()
-                          .replace(["1kbPromoter", "allExons", "intron", "genes", "intergenic"],
-                                   ["Promoter", "Exon", "Intron", "Genic", "Intergenic"])
+                          .replace(["1kbPromoter", "allExons", "intron"],
+                                   ["Promoter", "Exon", "Intron"])
                           .melt(id_vars=["Start_Feature", "End_Feature", "feature_type"], 
                                 value_vars=["zscore_5mC", "zscore_5hmC"],
                                 value_name="zscore", var_name="Mod")
                                 .replace(["zscore_5mC", "zscore_5hmC"],
                                          ["5mC", "5hmC"]))
 
-    tickorder = ["Promoter", "5UTR", "Intron", "Exon", "3UTR", "Genic", "Intergenic"]
+    tickorder = ["Promoter", "5UTR", "Intron", "Exon", "3UTR"]
 
-    [ax.axhline(0, ls=":", c="grey", label="Genomic mean") for ax in [ax4, ax5]]
+    [ax.axhline(0, ls=":", c="grey", label="Genomic mean") for ax in [ax4, ax5, ax6]]
     
     nanopore_annotated["feature_type"] = pd.Categorical(nanopore_annotated["feature_type"],
                                                         categories=tickorder,
                                                         ordered=True)
 
-    sns.lineplot(nanopore_annotated, 
+    sns.barplot(nanopore_annotated, 
                 x="feature_type", y="zscore",
-                hue="Mod", style="Mod", palette="GnBu",
+                estimator="mean", errorbar=None,
+                hue="Mod", palette="GnBu",
                 hue_order=["5mC", "5hmC"],
                 ax=ax4)
 
-    sns.move_legend(ax4, loc="lower center", 
+    sns.move_legend(ax4, loc="lower right", 
                     frameon=False, title=None, 
-                    ncols=3, bbox_to_anchor=(.5, 1))
+                    )
+    # ax4.get_legend().set_in_layout(False)
+                    
+    nanopore_annotated = (annotate_wrapper(modbeds_list[0], gene_annotator)
+                        .reset_index()
+                        .replace(["genes", "intergenic"], ["Genic", "Intergenic"])
+                        .melt(id_vars=["Start_Feature", "End_Feature", "feature_type"],
+                            value_vars=["zscore_5mC", "zscore_5hmC"],
+                            value_name="zscore", var_name="Mod")
+                            .replace(["zscore_5mC", "zscore_5hmC"], 
+                                     ["5mC", "5hmC"]))
     
+    tickorder = ["Genic", "Intergenic"]
+
+    nanopore_annotated["feature_type"] = pd.Categorical(nanopore_annotated["feature_type"],
+                                                        categories=tickorder,
+                                                        ordered=True)
+    
+    sns.barplot(nanopore_annotated, 
+                x="feature_type", y="zscore",
+                estimator="mean", errorbar=None,
+                legend=None,
+                hue="Mod", palette="GnBu",
+                hue_order=["5mC", "5hmC"],
+                ax=ax5)
+
     nanopore_annotated = (annotate_wrapper(modbeds_list[0], cgi_annotator)
                           .reset_index()
                           .replace(["OpenSea"], ["Sea"])
@@ -148,13 +160,14 @@ def fig_main(figsize, fontsize, dryrun=True):
     sns.lineplot(nanopore_annotated, 
                 x="feature_type", y="zscore",
                 hue="Mod", style="Mod", palette="GnBu",
-                hue_order=["5mC", "5hmC"], legend=False,
-                ax=ax5)
+                hue_order=["5mC", "5hmC"],
+                ax=ax6)
     
-    [ax.set_xlabel(None) for ax in [ax4, ax5]]
+    sns.move_legend(ax6, "lower left", frameon=False, title=None)
+    [ax.set_xlabel(None) for ax in [ax4, ax5, ax6]]
+    [ax.set_ylabel(None) for ax in [ax5, ax6]]
 
     ax4.set_ylabel("Site modification (%) Z-Score")
-    ax5.set_ylabel("Site modification (%) Z-Score")
 
     with concurrent.futures.ProcessPoolExecutor(3) as merge_executor:
         merge_futures = [merge_executor.submit(merge_positions, modbed, True, col) 
@@ -211,24 +224,28 @@ def fig_main(figsize, fontsize, dryrun=True):
         nano_oxbs, nano_tab = [future.result() for future in dev_plot_futures]
 
     gc.collect()
+    
+    ax3.axvline(0, ls=":", c="grey", lw=0.8)
+    
     sns.histplot(pd.concat([nano_oxbs, nano_tab]),
                 x="diff", 
                 stat="proportion",
                 binrange=(-50, 50), binwidth=2,
                 element="step", fill=False, 
+                legend=False,
                 lw=0.8,
                 hue="Mod", palette="GnBu",
                 ax=ax3)
         
-    ax3.lines[0].set_linestyle("--")
-    h = ax3.legend_.legend_handles
-    h[1].set_ls("--")
+    ax3.lines[1].set_linestyle("--")
+    legend = [Line2D([0], [0], lw=.8, ls="-", c=sns.color_palette("GnBu", 2)[0]),
+              Line2D([0], [0], lw=.8, ls="--", c=sns.color_palette("GnBu", 2)[1])]
+    ax3.legend(legend, ["5mC", "5hmC"])
+    sns.move_legend(ax3, "upper left", frameon=False, title=None)
 
     ax3.set_ylim((0, 0.1))
     ax3.set_xlim((-50, 50))
     ax3.set_xlabel("Bisulphite % - Nanopore %")
-
-    sns.move_legend(ax3, "upper right", frameon=False, title=None)
 
     sns.despine()
 

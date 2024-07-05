@@ -29,8 +29,9 @@ def remove_low_count_tiles(tiled_df, threshold=5):
     return tiled_df.drop(columns="CpG_count")
 
 def calculate_zscore(grouped_df):
-    grouped_df = grouped_df.eval("tile_5hmC = (N_5hmC/readCount)*100")
-    grouped_df["zscore"] = stats.zscore(grouped_df["tile_5hmC"])
+    grouped_df = grouped_df.eval("tile_5hmC = (N_5hmC/readCount)")
+    grouped_df["asin"] = np.arcsin(grouped_df["tile_5hmC"])
+    grouped_df["zscore"] = stats.zscore(grouped_df["asin"])
 
     return grouped_df.drop(columns=["N_5hmC", "readCount"])
 
@@ -185,7 +186,7 @@ def fig_main(dryrun=True):
         jg.savefig("plots/tests/pcr_hmedip_comparison.png", dpi=600)
     
     else: 
-        jg.savefig("plots/pcr_hmedip_comparison.png", dpi=600)
+        jg.savefig("plots/pcr_hmedip_comparison.svg", dpi=600)
 
     ##### main function ##### 
 
