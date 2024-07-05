@@ -176,6 +176,8 @@ def fig_main(dry_run):
                 linewidth=0.8,
                 ax=ax5)
     
+    print(boxplot_df.groupby(["Technique", "feature_type"])["readCount_vs_avg"].median())
+    
     print("Done.")
     ax5.set_ylabel("Difference to median (%)")
     ax5.yaxis.set_ticks(np.arange(-100, 400, 100))
