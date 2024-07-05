@@ -14,7 +14,7 @@ import AnalysisTools.ctcf_site_tools as ctcf
 import scikit_posthocs as sp
 
 @timer
-def main(test_run=True, min_depth=1, upset_plot=False, filter_distance=np.inf):
+def main(test_run=True, min_depth=1, upset_plot=False, filter_distance=500):
 
     root_path = "data/duplex_data/"
     files = ["cbm2/CBM_2_rep1.masked.bed", "cbm2/CBM_2_rep2.masked.bed",
@@ -26,20 +26,16 @@ def main(test_run=True, min_depth=1, upset_plot=False, filter_distance=np.inf):
         all_duplex_modbeds = [load_executor.submit(ctcf.read_merge, path, test_run, replicate+1) for replicate, path in enumerate(file_paths)]
         all_duplex_modbeds = [modbed.result() for modbed in all_duplex_modbeds]
 
-    with concurrent.futures.ProcessPoolExecutor(len(all_duplex_modbeds)) as violin_executor:
-        violin_futures = [violin_executor.submit(modbed.site_summit_distances, min_depth) for modbed in all_duplex_modbeds]
+    with concurrent.futures.ThreadPoolExecutor(len(all_duplex_modbeds)) as violin_executor:
+        violin_futures = [violin_executor.submit(modbed.site_summit_distances, min_depth, filter_distance) for modbed in all_duplex_modbeds]
         violin_concat = ctcf.DistDF(pd.concat([future.result() for future in violin_futures])
-                                    .groupby(["Pattern", "Distance"], observed=True)
+                                    .groupby(["Pattern", "Distance", "abs"], observed=True)
                                     .agg({"Count" : sum})
                                     .reset_index())
         
         violin_reads = violin_concat.explode_reads().reset_index(drop=True)
 
-    violin_reads["abs"] = abs(violin_reads["Distance"])
-    violin_reads = violin_reads.loc[violin_reads["abs"] <= filter_distance]
-    print(violin_reads.groupby("Pattern")["abs"].median())
-
-    patterns = violin_reads['Pattern'].unique()
+    patterns = ["C:C", "5mC:5mC", "5hmC:5hmC", "C:5mC", "C:5hmC", "5mC:5hmC"]
     groups = [violin_reads['abs'][violin_reads['Pattern'] == pattern] for pattern in patterns]
     for pattern in patterns:
         x = np.where(violin_reads["Pattern"] == pattern, True, False)
@@ -71,10 +67,17 @@ def main(test_run=True, min_depth=1, upset_plot=False, filter_distance=np.inf):
 
     ax3.axhline(0, ls=":", c="grey")
     sns.violinplot(violin_reads, 
-                   x="Pattern", y="Distance", hue="Pattern",
-                   palette="YlGnBu",
-                   order=["C:C", "5mC:5mC", "5hmC:5hmC", "C:5mC", "C:5hmC", "5mC:5hmC"],    
+                   x="Pattern", y="Distance", 
+                   color="#99d8c9",
+                   bw_method="silverman", bw_adjust=1.5,
+                   cut=1,
+                   linewidth=.8,
+                   order=patterns,    
                    ax=ax3)
+    
+    counts = violin_reads.groupby("Pattern").size()
+    labels = [pattern + f"\nn={counts[pattern]}" for pattern in patterns]
+    ax3.set_xticks(patterns, labels)
     
     ax3.set_ylabel("Distance to summit (bp)")
     ax3.set_xlabel("Density of CpGs")
@@ -158,34 +161,36 @@ def main(test_run=True, min_depth=1, upset_plot=False, filter_distance=np.inf):
 
     # Stats for ax1 and ax2
 
-    def comparer(exp, obs):
-        merged_replicates = motif_vs_chip.groupby(["Type", "Pattern"]).sum(numeric_only=True)
-        obs = merged_replicates.groupby("Type").get_group(obs).reset_index()
-        exp = merged_replicates.groupby("Type").get_group(exp).reset_index()
+    def comparer(exp_set, obs_set, pattern):
+        obs = motif_vs_chip.groupby(["Type", "Pattern"]).get_group((obs_set, pattern)).reset_index()
+        exp = motif_vs_chip.groupby(["Type", "Pattern"]).get_group((exp_set, pattern)).reset_index()
 
         exp_sum = exp["Count"].sum()
-        exp["Proportion"] = exp.eval("Count / @exp_sum")
+        test = stats.ttest_rel(obs["Proportion"], exp["Proportion"])
+        print(f"T-Test {obs_set} vs. {exp_set}:", test.pvalue)
+        # exp["Proportion"] = exp.eval("Count / @exp_sum")
 
-        obs_sum = obs["Count"].sum()
-        exp_freq = exp["Proportion"].mul(obs_sum)
+        # obs_sum = obs["Count"].sum()
+        # exp_freq = exp["Proportion"].mul(obs_sum)
 
-        # print(obs_sum, exp_freq.sum())
+        # # print(obs_sum, exp_freq.sum())
 
-        assert round(exp_freq.sum()) == obs_sum
+        # assert round(exp_freq.sum()) == obs_sum
 
-        data = np.array([obs["Count"].to_numpy(), exp_freq.to_numpy()])
-        data = data.astype(int)
+        # data = np.array([obs["Count"].to_numpy(), exp_freq.to_numpy()])
+        # data = data.astype(int)
 
-        # print(data)
+        # # print(data)
 
-        v = contingency.association(data)
-        stat, p, dof, _ = stats.chi2_contingency(data, lambda_="log-likelihood")        
-        return v, p
+        # v = contingency.association(data)
+        # stat, p, dof, _ = stats.chi2_contingency(data, lambda_="log-likelihood")        
+        return 
     
-    print("Genome vs. Genome sanity test :", comparer("Genome average", "Genome average"))
-    print("Genome vs. Motif :", comparer("Genome average", "CTCF motif"))
-    print("Genome vs. Summit :", comparer("Genome average", "ChIP summit"))
-    print("Motif vs. Summit :", comparer("CTCF motif", "ChIP summit"))
+    for pattern in patterns:    
+        print(pattern, "Genome vs. Genome sanity test :", comparer("Genome average", "Genome average", pattern))
+        print(pattern, "Genome vs. Motif :", comparer("Genome average", "CTCF motif", pattern))
+        print(pattern, "Genome vs. Summit :", comparer("Genome average", "ChIP summit", pattern))
+        print(pattern, "Motif vs. Summit :", comparer("CTCF motif", "ChIP summit", pattern))
 
 ##### Main function #####
 
@@ -211,6 +216,7 @@ if __name__=="__main__":
     parser.add_argument("--filter_distance", 
                         dest="filter_distance",
                         type=np.int64, 
+                        default=500,
                         help="Whether to filter distance CpG dyads when comparing distance to summit.")
 
 
