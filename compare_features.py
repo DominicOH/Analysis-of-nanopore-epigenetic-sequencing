@@ -12,8 +12,13 @@ from scipy import stats
 
 def annotate_wrapper(df_list: list[pd.DataFrame], annotator: annotation_features.Annotator):
     def calculate_zscore(annotated_df: pd.DataFrame):
-        annotated_df.eval("percentMeth_5hmC = (N_5hmC/readCount)*100", inplace=True)                
-        annotated_df["zscore_5hmC"] = stats.zscore(annotated_df["percentMeth_5hmC"])
+        """
+        Z-Score is here calculated after annotation. Z-Score here calculated element-wise rather than CpG-wise. 
+        """
+        annotated_df.eval("percentMeth_5hmC = (N_5hmC/readCount)", inplace=True)
+        annotated_df[f"asin_5hmC"] = np.arcsin(annotated_df[f"percentMeth_5hmC"])
+        annotated_df["zscore_5hmC"] = stats.zscore(annotated_df["asin_5hmC"])
+        
         return annotated_df   
      
     def group_feature(annotated_df: pd.DataFrame):
@@ -80,22 +85,36 @@ def fig_main(dryrun, fontsize=5):
     # Data processing # 
 
     feature_annotator = annotation_features.Annotator("/mnt/data1/doh28/analyses/mouse_hydroxymethylome_analysis/feature_references/feature_comparison/")
-    # cgi_annotator = annotation_features.Annotator("/mnt/data1/doh28/analyses/mouse_hydroxymethylome_analysis/feature_references/cgi/")
+    gene_annotator = annotation_features.Annotator("/mnt/data1/doh28/analyses/mouse_hydroxymethylome_analysis/feature_references/genic/")
 
     with concurrent.futures.ThreadPoolExecutor(2) as annotation_executor:
         annotated_data = annotation_executor.map(lambda df: annotate_wrapper(df, feature_annotator), modbeds_list)
         nanopore_annotated, tab_annotated = annotated_data
 
-    del annotated_data, modbeds_list
+    del annotated_data
 
     features_enrichment = (pd.merge(nanopore_annotated, tab_annotated, 
                                     how="inner", 
                                     on=["Start_Feature", "End_Feature", "feature_type"],
                                     suffixes=["_Nanopore", "_TAB"])
                                     .reset_index()
-                                    .replace(["intron", "allExons", "genes", "1kbPromoter"],
-                                             ["Intron", "Exon", "Gene body", "Promoter"]
+                                    .replace(["intron", "allExons", "1kbPromoter"],
+                                             ["Intron", "Exon", "Promoter"]
                                              ))
+    
+    with concurrent.futures.ThreadPoolExecutor(2) as annotation_executor:
+        annotated_data = annotation_executor.map(lambda df: annotate_wrapper(df, gene_annotator), modbeds_list)
+        nanopore_annotated, tab_annotated = annotated_data
+
+    gene_enrichment = (pd.merge(nanopore_annotated, tab_annotated, 
+                                    how="inner", 
+                                    on=["Start_Feature", "End_Feature", "feature_type"],
+                                    suffixes=["_Nanopore", "_TAB"])
+                                    .reset_index()
+                                    .replace(["genes"], ["Gene body"]))
+    gene_enrichment = gene_enrichment.loc[gene_enrichment["feature_type"] == "Gene body"]
+
+    all_enrichment = pd.concat([features_enrichment, gene_enrichment])
         
     # Fig setup # 
     
@@ -103,7 +122,7 @@ def fig_main(dryrun, fontsize=5):
     mpl.rc('font', size=fontsize)
 
 
-    fg = sns.FacetGrid(features_enrichment, col="feature_type", 
+    fg = sns.FacetGrid(all_enrichment, col="feature_type", 
                        hue="feature_type", palette="PuBuGn",
                        col_wrap=3, col_order=["Gene body", "Promoter", "5UTR", "Intron", "Exon", "3UTR"],
                        xlim=(-3, 4), ylim=(-3, 4))
@@ -130,12 +149,14 @@ def fig_main(dryrun, fontsize=5):
     for feature in ["Intron", "Exon", "Gene body", "Promoter", "5UTR", "3UTR"]:
         ax = fg.axes_dict[feature]
 
-        test_df = features_enrichment.query(f"feature_type == '{feature}'")
+        test_df = all_enrichment.query(f"feature_type == '{feature}'")
         stat = stats.spearmanr(test_df["zscore_5hmC_TAB"], 
                                test_df["zscore_5hmC_Nanopore"])
-        print(feature, stat.pvalue)
+        print(feature, len(test_df), stat.pvalue)
         
-        if stat.pvalue < 0.001:
+        if stat.pvalue < 0.0001:
+            star = "****"
+        elif stat.pvalue < 0.001:
             star = "***"
         elif stat.pvalue < 0.01:
             star = "**"

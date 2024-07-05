@@ -11,6 +11,8 @@ import seaborn as sns
 import matplotlib as mpl
 from matplotlib.gridspec import GridSpec
 from scipy import stats
+from statsmodels.stats import proportion
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 
 def tile_wgs(df, tile_size=500):
     tiles = (pr.PyRanges(df.reset_index())
@@ -25,15 +27,14 @@ def tile_wgs(df, tile_size=500):
              .reset_index())
     return tiles
 
-def remove_low_count_tiles(tiled_df, threshold=5):
-    tiled_df = tiled_df.loc[tiled_df.eval("CpG_count >= @threshold")]
+def remove_low_count_tiles(tiled_df, threshold=10):
+    tiled_df = tiled_df.query(f"CpG_count >= {threshold}")
     return tiled_df.drop(columns="CpG_count")
 
-def assign_enrichment(grouped_df):
-    grouped_df = grouped_df.eval("tile_5hmC = (N_5hmC/readCount)*100")
-    mean = grouped_df["tile_5hmC"].mean()
-
-    grouped_df = grouped_df.assign(enrichment = lambda r: np.log2((r["tile_5hmC"]+1)/(mean+1)))
+def calculate_zscore(grouped_df):
+    grouped_df = grouped_df.eval("tile_5hmC = (N_5hmC/readCount)")
+    grouped_df["asin"] = np.arcsin(grouped_df["tile_5hmC"])
+    grouped_df["zscore"] = stats.zscore(grouped_df["asin"])
     return grouped_df.drop(columns=["N_5hmC", "readCount"])
 
 def get_basecall_stats(df):
@@ -43,7 +44,8 @@ def get_basecall_stats(df):
         "N_5hmC" : sum
         })
     call_stats = pd.DataFrame(calls, columns=["count"])
-    call_stats = call_stats.assign(proportion = lambda r: (r.div(r.sum()))*100)
+    call_stats = call_stats.assign(proportion = lambda r: (r.div(r.sum())))
+    call_stats = call_stats.eval("percentage = proportion*100")
     return call_stats
 
 @multisite.asPyRangesDecorator
@@ -68,29 +70,32 @@ def load_hmedip(dirpath):
 
 def prep_feature_type_counts(obj):
     hmedip_annotator = annotation_features.Annotator("feature_references/hmedip_comparison_features/")
-    annotated = (hmedip_annotator.annotate(obj)
-                 .groupby("Replicate")
-                 .value_counts(["feature_type"], normalize=True)
-                 .reset_index(name="proportion")
-                 .replace(["1kbPromoter", "intron", "allExons", "intergenic"], 
-                          ["Promoter", "Intron", "Exon", "Intergenic"]))
-    return annotated
+    annotated = hmedip_annotator.annotate(obj)
+                 
+    feature_counts = (annotated.groupby("Replicate")
+                      .value_counts(["feature_type"], normalize=True, sort=False)
+                      .reset_index(name="proportion")
+                      .replace(["1kbPromoter", "intron", "allExons", "intergenic"], 
+                               ["Promoter", "Intron", "Exon", "Intergenic"]))
+    
+    counts = annotated.groupby("Replicate", as_index=False).value_counts(["feature_type"], sort=False)
+    feature_counts["count"] = counts["count"]
+    return feature_counts
 
 @helpers.timer
-def fig_main(dryrun=True):
+def fig_main(dryrun=True, fontsize=5, threshold=10):
     # Formatting # 
     sns.set_style("ticks")
-    mpl.rc('font', size=5)
-    fig = plt.figure(figsize=(180/25.4, 89/25.4),   
+    mpl.rc('font', size=fontsize)
+    fig = plt.figure(figsize=(89/25.4, 140/25.4),   
                     dpi=600, layout="constrained")
 
-    gs = GridSpec(2, 4, fig)
+    gs = GridSpec(4, 2, fig)
 
-    ax1 = fig.add_subplot(gs[0, :2]) # pyGenomeTracks
-    ax2 = fig.add_subplot(gs[1, :2])
-    ax3 = fig.add_subplot(gs[:, 2])
-    ax4 = fig.add_subplot(gs[0, 3])
-    ax5 = fig.add_subplot(gs[1, 3])
+    ax1 = fig.add_subplot(gs[0, :]) # pyGenomeTracks
+    ax2 = fig.add_subplot(gs[1, 0])
+    ax3 = fig.add_subplot(gs[1, 1])
+    ax4 = fig.add_subplot(gs[2:, :])
 
     for i, ax in enumerate(fig.axes):
         ax.set_title(string.ascii_lowercase[i], fontdict={"weight" : "bold",
@@ -107,37 +112,23 @@ def fig_main(dryrun=True):
     narrow_peaks = pd.concat(load_hmedip(nanopore_hmedip_dirpath))
 
     blacklist = pr.read_bed("data/hmedip/blacklist/mm39-blacklist.v2_adj.bed")
+    # these are regions not currently on the blacklist, inspected in igv, 
+    # found to likely represent repetitive elements
+    belongs_on_blacklist = pr.PyRanges(
+        pd.DataFrame({"Chromosome" : ["chr13", "chr17", "chr17"], 
+                      "Start" : [99221000, 4676277, 56506763],
+                      "End" : [99223000, 4676915, 56507303]})
+    )				
     narrow_peaks_pr = pr.PyRanges(narrow_peaks)
-                                                        
+
     hmedip_annotator = annotation_features.Annotator("feature_references/hmedip_comparison_features/")
-    confident_peaks = hmedip_annotator.annotate(narrow_peaks_pr.intersect(blacklist, invert=True), report_overlap=True)
+    confident_peaks = narrow_peaks_pr.intersect(blacklist, invert=True).intersect(belongs_on_blacklist, invert=True)
+    confident_peaks = hmedip_annotator.annotate(confident_peaks, 
+                                                report_overlap=True)
     confident_peaks = (confident_peaks.sort_values("Overlap", ascending=False)
-                                    .groupby(["Chromosome", "Start", "End"], observed=True)
-                                    .head(1)
-                                    .replace(["1kbPromoter", "intron", "allExons", "intergenic"], ["Promoter", "Intron", "Exon", "Intergenic"]))
-
-    blacklisted_peaks = narrow_peaks_pr.intersect(blacklist)
-
-    # Plot peak confidence scatter
-
-
-    sns.scatterplot(blacklisted_peaks.as_df(), 
-                    x="fold_enrichment", y="QVAL",
-                    marker="x", 
-                    label="Blacklist",
-                    s=10,
-                    color=sns.color_palette("Paired", 6)[5],
-                    ax=ax3)
-
-    sns.scatterplot(confident_peaks.sort_values("feature_type"),
-                    x="fold_enrichment", y="QVAL",
-                    s=10, hue="feature_type", style="feature_type",
-                    palette="Greens",
-                    ax=ax3)
-
-    ax3.set_ylabel(r"$-log_{10}$ q-value")
-    ax3.set_xlabel("Fold enrichment over input")
-    sns.move_legend(ax3, "upper left", title=None)
+                                      .groupby(["Chromosome", "Start", "End"], observed=True)
+                                      .head(1)
+                                      .replace(["1kbPromoter", "intron", "allExons", "intergenic"], ["Promoter", "Intron", "Exon", "Intergenic"]))
 
     # Plot proportion of C basecalls peak vs. Nanopore WGS # 
     print("Loading Nanopore WGS reference data...")
@@ -157,106 +148,140 @@ def fig_main(dryrun=True):
         nano_modbeds_fut, tab_modbeds_fut = [fetch_executor.submit(common.fetch_modbeds, path, sel_cols) for path, sel_cols in zip([nano_path, tab_path], [nano_cols, tab_cols])]
         nano_modbeds = [future for future in nano_modbeds_fut.result()]
         tab_modbeds = [future.rename(columns={"percentMeth_mod" : "percentMeth_5hmC",
-                                                "N_mod" : "N_5hmC"}) for future in tab_modbeds_fut.result()]
+                                              "N_mod" : "N_5hmC"}) for future in tab_modbeds_fut.result()]
 
     with concurrent.futures.ThreadPoolExecutor(4) as merge_executor:
         nanopore_average, tab_average = merge_executor.map(common.merge_positions, [nano_modbeds, tab_modbeds])
         nanopore_average, tab_average = [df.reset_index() for df in [nanopore_average, tab_average]]
 
+    def extract_confident_peaks(df):
+        pyrange = pr.PyRanges(df)
+        confident_peaks_pr = pr.PyRanges(confident_peaks)
+
+        return pyrange.intersect(confident_peaks_pr, strandedness=False, how= "first").as_df()
+    
     hmedip_modbeds = common.fetch_modbeds("/mnt/data1/doh28/data/nanopore_hmc_validation/hmedip_nanopore/modkit_reports/modbeds/", ["N_C", "N_mC", "N_hmC"])
+    hmedip_modbeds = map(extract_confident_peaks, hmedip_modbeds)
 
     print("Summarising all nanopore basecalls.")
     hmedip_call_stats = [get_basecall_stats(df).assign(Replicate = i) for i, df in enumerate(hmedip_modbeds)]
     wgs_call_stats = [get_basecall_stats(df).assign(Replicate = i) for i, df in enumerate(nano_modbeds)]
 
-    callstats_bar_df = pd.concat([pd.concat(hmedip_call_stats).assign(Method="All hMeDIP"), 
-                                  pd.concat(wgs_call_stats).assign(Method="WGS"),
-                                  pd.concat(hmedip_call_stats).query("Replicate > 0").assign(Method="Monoclonal")]).reset_index().rename(columns={"index" : "mod"})
+    callstats_bar_df = (pd.concat([pd.concat(hmedip_call_stats).assign(Method="hMeDIP"), 
+                                   pd.concat(wgs_call_stats).assign(Method="WGS")])
+                          .reset_index()
+                          .rename(columns={"index" : "mod"}))
+
     callstats_bar_df = callstats_bar_df.replace(["N_C", "N_5mC", "N_5hmC"], ["C", "5mC", "5hmC"])
     
-    def stat_arrays(df, groups, target):
-        array = [df.groupby(groups)
-        .get_group((mod, target))["proportion"]
-        .to_numpy() for mod in ["C", "5mC", "5hmC"]]
-        return array
+    wgs = pd.concat(wgs_call_stats).reset_index().rename(columns={"index" : "mod"})
+    wgs_sum = wgs["count"].sum()
+    wgs_mods = wgs.groupby("mod").sum().reset_index().replace(["N_C", "N_5mC", "N_5hmC"], ["C", "5mC", "5hmC"])
+    wgs_mods["proportion"] = wgs_mods["count"].div(wgs_sum)
 
-    all_hmedips = stat_arrays(callstats_bar_df, ["mod", "Method"], "All hMeDIP")
-    wgss = stat_arrays(callstats_bar_df, ["mod", "Method"], "WGS")
-    monoclonal_only = stat_arrays(callstats_bar_df, ["mod", "Method"], "Monoclonal")
+    hmedip_only = callstats_bar_df.groupby("Method").get_group("hMeDIP")
+    for mod, hypothesis in zip(["C", "5mC", "5hmC"], ["less", "less", "greater"]):
+        exp_count = wgs_mods.loc[wgs_mods["mod"] == mod, "count"].to_list()[0]
+        exp_p = wgs_mods.loc[wgs_mods["mod"] == mod, "proportion"].to_list()[0]
 
-    print("Welch's T-Test: all hMeDIPs with WGS:")
-    for mod, hmedip, wgs in zip(["C", "5mC", "5hmC"], all_hmedips, wgss):
-        # Have to assume unequal variance due to the presence of the polyclonal antibody
-        stat = stats.ttest_ind(hmedip, wgs, equal_var=False).pvalue
-        print(f"{mod}: p={round(stat, 6)}")
+        counts = hmedip_only.loc[hmedip_only["mod"] == mod, "count"].to_numpy()       
+        nobs = hmedip_only.groupby("Replicate")["count"].sum().to_numpy()
 
-    print("Unpaired T-Test: monoclonal hMeDIPS with WGS:")
-    for mod, hmedip, wgs in zip(["C", "5mC", "5hmC"], monoclonal_only, wgss):
-        # We can assume equal variance because all WGS are consistent replicates of littermate mice
-        # And the hMeDIP are produced using the same antibody 
-        stat = stats.ttest_ind(hmedip, wgs, equal_var=True).pvalue
-        print(f"{mod}: p={stat}")
-    
-    ax5.axhline(0, c=(0.15, 0.15, 0.15, 1.0), lw=0.8)
+        print("Binom:", mod, stats.binomtest(int(np.sum(counts)), int(np.sum(nobs)), exp_p, hypothesis))
+        print("Z-Test:", mod, proportion.proportions_ztest(int(np.sum(counts)), int(np.sum(nobs)), exp_p))
+
+        data = np.array([[int(np.sum(counts)), int(np.sum(nobs)) - int(np.sum(counts))], 
+                         [exp_count, wgs_sum - exp_count]])
+
+        print("Fisher Exact:", mod, stats.fisher_exact(data, hypothesis))
+
+    ttest_df = callstats_bar_df.groupby(["mod", "Method"])
+
+    for mod in ["C", "5mC", "5hmC"]:
+        genome = ttest_df.get_group((mod, "WGS"))
+        n_hmedip = ttest_df.get_group((mod, "hMeDIP"))
+        
+        print("T-Test:", mod, stats.ttest_ind(genome["proportion"].to_numpy(), n_hmedip["proportion"].to_numpy(),
+                                              equal_var=False))
+
     sns.barplot(callstats_bar_df.sort_values("Method"), 
                 x="mod",
                 hue="Method",
-                y="proportion",
-                palette="Greens",
+                y="percentage",
+                palette="PuBuGn",
                 width=.6,
                 order=["C", "5mC", "5hmC"], 
-                hue_order=["WGS", "All hMeDIP", "Monoclonal"], 
-                errorbar=("sd", 1), err_kws={"lw" : 0.8}, capsize=.25,            
-                ax=ax5)
-    
-    # ax5.annotate("*", (2, 35), size=7)
-    sns.move_legend(ax5, "lower center", ncols=2, title=None, frameon=False, reverse=True, bbox_to_anchor=(.5, 1))
+                hue_order=["WGS", "hMeDIP"], 
+                errorbar=("sd", 1), err_kws={"lw" : 1}, capsize=.25,            
+                ax=ax3)
 
-    ax5.set_xlabel(None)
-    ax5.set_ylabel("% of CpG-context basecalls")
+    sns.move_legend(ax3, "lower center", ncols=2, title=None, frameon=False, bbox_to_anchor=(.5, 1))
 
-    # hMeDIP vs. Nanopore WGS enriched regions
+    ax3.set_xlabel(None)
+    ax3.set_ylabel("Percent of CpG-context basecalls")
                     
     with concurrent.futures.ProcessPoolExecutor(2) as tile_executor:
         print("Tiling Nanopore WGS reference data.")
         tile_dfs = tile_executor.map(tile_wgs, [nanopore_average, tab_average])
-        tile_dfs = map(remove_low_count_tiles, tile_dfs)
+        tile_dfs = map(lambda df: remove_low_count_tiles(df, threshold), tile_dfs)
 
-    nanopore_wgs_tiles, tab_tiles = [assign_enrichment(df) for df in tile_dfs]
+    nanopore_wgs_tiles, tab_tiles = [calculate_zscore(df) for df in tile_dfs]
     kde_background = pd.merge(nanopore_wgs_tiles, tab_tiles, on=["Chromosome", "Start", "End"], suffixes=["_Nanopore", "_TAB"])
 
     peak_overlay = (pr.PyRanges(kde_background)
-                    .join(narrow_peaks_pr.intersect(blacklist, invert=True), report_overlap=True)
+                    .join(pr.PyRanges(confident_peaks), report_overlap=True, suffix="_Peak")
                     .as_df()
                     .sort_values("Overlap", ascending=False)
-                    .groupby(["Chromosome", "Start", "End"], observed=True)
-                    .head(1))
+                    .groupby(["Chromosome", "Start_Peak", "End_Peak", "Replicate"], observed=True) 
+                    .head(1)
+                    .eval("Peak_length = End_Peak - Start_Peak")
+                    .query("Overlap >= (Peak_length / 2)")) # At least half the peak must sit in the region
+    
+    sns.kdeplot(kde_background, 
+                x="zscore_TAB",
+                y="zscore_Nanopore",
+                fill=True, 
+                # alpha=.6, 
+                color="#9ecae1",
+                ax=ax4)
+
+    ax4in = inset_axes(ax4, height="30%", width="30%", loc="upper left")
 
     sns.kdeplot(kde_background, 
-                x="enrichment_TAB",
-                y="enrichment_Nanopore",
+                x="zscore_TAB",
+                y="zscore_Nanopore",
                 fill=True, 
-                color=sns.color_palette("Greens", 5)[4],
-                ax=ax2)
+                # alpha=.6, 
+                color="#9ecae1",
+                ax=ax4in)
+
+    ax4in.tick_params("both", left=False, bottom=False, labelleft=False, labelbottom=False)
+    ax4in.set_xlabel(None)
+    ax4in.set_ylabel(None)
 
     sns.scatterplot(peak_overlay.sort_values("fold_enrichment"),
-                    x="enrichment_TAB",
-                    y="enrichment_Nanopore",
-                    palette="rocket_r", 
-                    size="fold_enrichment", sizes=(1, 15),
+                    x="zscore_TAB",
+                    y="zscore_Nanopore",
                     hue="fold_enrichment",
-                    ax=ax2)
+                    palette="OrRd", 
+                    size="fold_enrichment", sizes=(1, 15),
+                    ax=ax4)
+    
+    sns.move_legend(ax4, "lower right", title="hMeDIP fold\nenrichment")
 
-    sns.move_legend(ax2, "lower right", title="hMeDIP fold\nenrichment")
+    ax4.set_xlabel("5hmC Z-Score (TAB)")
+    ax4.set_ylabel("5hmC Z-Score (Nanopore)")
 
-    ax2.set_xlabel("Mean TAB Enrichment")
-    ax2.set_ylabel("Mean Nanopore Enrichment")
+    for ax in [ax4, ax4in]:
+        ax.set_xlim((-3, 7))
+        ax.set_ylim((-3, 7))
 
-    ax2.set_xlim((-4, 4))
-    ax2.set_ylim((-4, 4))
+        ax.axhline(kde_background["zscore_TAB"].mean(), ls=":", c="grey", lw=0.8)
+        ax.axvline(kde_background["zscore_Nanopore"].mean(), ls=":", c="grey", lw=0.8)
 
-    ax2.axhline(0, ls=":", c="grey", lw=0.8)
-    ax2.axvline(0, ls=":", c="grey", lw=0.8)
+    sns.despine()
+
+    # presentation_fig.savefig("plots/presentation_hMeDIPseq.svg", transparent=True)
 
     public_hmedip_dirpath = "/mnt/data1/doh28/data/public/PRJNA134133_hMeDIP/macs2/ucsc_converted/"
     public_hmedip = pd.concat([table.assign(Replicate = i) for i, table in enumerate(load_hmedip(public_hmedip_dirpath))])
@@ -265,25 +290,35 @@ def fig_main(dryrun=True):
     g_tiles["Replicate"] = 0
 
     annotated_all = map(prep_feature_type_counts, [confident_peaks, g_tiles, public_hmedip])
-    feature_barplot = pd.concat([df.assign(Method = method) for method, df in zip(["Nanopore", "Genome", "Ref."], annotated_all)])
+    feature_barplot = pd.concat([df.assign(Method = method) for method, df in zip(["Direct hMeDIP", "Genome", "PCR hMeDIP"], annotated_all)])
 
-    feature_barplot.eval("proportion = proportion * 100", inplace=True)
+    feature_barplot.eval("percentage = proportion * 100", inplace=True)
     sns.barplot(feature_barplot.reset_index(),
                 x="feature_type", 
-                y="proportion",
+                y="percentage",
                 errorbar=("sd", 1), err_kws={"lw" : 0.8}, capsize=.25,
                 order=["Intergenic", "Intron", "Exon", "Promoter"],
-                hue="Method", hue_order=["Genome", "Ref.", "Nanopore"],
-                palette="Greens",
-                ax=ax4)
+                hue="Method", hue_order=["Genome", "Direct hMeDIP", "PCR hMeDIP"],
+                palette="BuPu",
+                ax=ax2)
+    
+    feature_barplot_stats = feature_barplot.groupby(["Method", "feature_type"])
+    for feature, hypothesis in zip(["Intergenic", "Intron", "Exon", "Promoter"], ["less", "greater", "greater", "greater"]):
+        genome_p = feature_barplot_stats.get_group(("Genome", feature))["proportion"].to_list()[0]
 
-    ax4.set_ylabel("Percentage of coverage")
-    ax4.set_xlabel(None)
+        counts = feature_barplot_stats.get_group(("Direct hMeDIP", feature))["count"].sum()
+        nobs = feature_barplot.loc[feature_barplot["Method"] == "Direct hMeDIP", "count"].sum()
 
-    sns.move_legend(ax4, loc="upper right", title=None, frameon=False)
+        print("Binom:", feature, stats.binomtest(counts, nobs, genome_p, hypothesis))
+
+    ax2.set_ylabel("Percentage of coverage")
+    ax2.set_xlabel(None)
+
+    sns.move_legend(ax2, loc="upper right", title=None, frameon=False)
         
     sns.despine()
     sns.despine(ax=ax1, left=True, bottom=True)
+    sns.despine(ax=ax4in, right=False, top=False)
 
     print("Done. Saving...")
     
@@ -305,6 +340,16 @@ if __name__=="__main__":
                         dest="dryrun", 
                         required=False,
                         help="Whether a test output is produced.") 
+    parser.add_argument("--fontsize", 
+                        action="store", 
+                        dest="fontsize",
+                        default=5, 
+                        required=False) 
+    parser.add_argument("--threshold", 
+                        action="store", 
+                        default=10,
+                        dest="threshold", 
+                        required=False)
 
     args = parser.parse_args()
 
@@ -313,5 +358,5 @@ if __name__=="__main__":
     else: 
         dryrun = False
 
-    fig_main(dryrun)
+    fig_main(dryrun, args.fontsize, args.threshold)
     print("Completed.")
