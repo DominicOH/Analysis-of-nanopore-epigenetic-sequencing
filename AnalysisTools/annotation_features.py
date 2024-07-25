@@ -71,5 +71,4 @@ class Annotator:
 
         if type(obj) == pd.DataFrame:
             obj = pr.PyRanges(obj)
-        
         return obj.join(feature_pr, strandedness=False, suffix="_Feature", apply_strand_suffix=False, **join_kwargs).as_df()

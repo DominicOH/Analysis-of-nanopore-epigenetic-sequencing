@@ -152,7 +152,7 @@ def fig_main(dryrun, fontsize=5):
         test_df = all_enrichment.query(f"feature_type == '{feature}'")
         stat = stats.spearmanr(test_df["zscore_5hmC_TAB"], 
                                test_df["zscore_5hmC_Nanopore"])
-        print(feature, len(test_df), stat.pvalue)
+        print(feature, len(test_df), stat)
         
         if stat.pvalue < 0.0001:
             star = "****"

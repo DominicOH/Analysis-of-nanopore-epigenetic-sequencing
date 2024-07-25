@@ -61,7 +61,7 @@ def fig_main(dryrun=True):
                       "End" : [99223000]})
     )
     
-    public_hmedip_dirpath = "/mnt/data1/doh28/data/public/PRJNA134133_hMeDIP/macs2/ucsc_converted/"
+    public_hmedip_dirpath = "/mnt/data1/doh28/data/public/PRJNA134133_hMeDIP/ucsc_converted/"
     public_hmedip = pd.concat([table.assign(Replicate = i) for i, table in enumerate(load_hmedip(public_hmedip_dirpath))])
     public_hmedip_pr = (pr.PyRanges(public_hmedip).intersect(blacklist, invert=True)
                         .intersect(belongs_on_blacklist, invert=True))
@@ -161,16 +161,18 @@ def fig_main(dryrun=True):
     stat = stats.spearmanr(kde_background["zscore_Nanopore"], 
                            kde_background["zscore_TAB"])
     
-    print("Spearman (tiles):", stat.pvalue)
+    print("Spearman (tiles):", stat, "n=", len(kde_background))
         
-    if stat.pvalue < 0.001:
+    if stat.pvalue < 0.0001:
+        star = "****"
+    elif stat.pvalue < 0.001:
         star = "***"
     elif stat.pvalue < 0.01:
         star = "**"
     elif stat.pvalue < 0.05:
         star = "*"
     
-    axin.annotate(f"$\\rho$={round(stat.statistic, 3)}$^{{{star}}}$", 
+    axin.annotate(f"$\\rho$={round(stat.statistic, 3)}$^{{star}}$", 
                   xy=(.5, 5.5))
     
     # jg.set(yticklabels={"size" : 7}, xticklabels={"size" : 7})
@@ -180,7 +182,8 @@ def fig_main(dryrun=True):
     print("Peaks over Z0 (TAB):", len(peak_overlay.query("zscore_TAB > 0"))/len(peak_overlay))
 
     print("Spearman (peaks vs. Nanopore):", stats.spearmanr(peak_overlay["zscore_Nanopore"], 
-                                                            peak_overlay["fold_enrichment"]))
+                                                            peak_overlay["fold_enrichment"]), 
+                                                            "n=", len(peak_overlay))
 
     if dryrun:
         jg.savefig("plots/tests/pcr_hmedip_comparison.png", dpi=600)

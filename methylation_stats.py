@@ -59,10 +59,12 @@ def stats_main(dryrun):
     tab_modbeds = [calculate_percentages(df, "N_mod").rename(columns={"percentMeth_mod" : "percentMeth_5hmC"}) for df in tab_modbeds]
     
     x, y = averages(nano_modbeds, "percentMeth_5mC"), averages(oxbs_modbeds, "percentMeth_5mC")
+    print(x, y)
     test = stats.ttest_ind(x, y, equal_var=False)
     print("5mC averages:", test)
 
     x, y = averages(nano_modbeds, "percentMeth_5hmC"), averages(tab_modbeds, "percentMeth_5hmC")
+    print(x, y)
     test = stats.ttest_ind(x, y, equal_var=False)
     print("5hmC averages:", test)
 

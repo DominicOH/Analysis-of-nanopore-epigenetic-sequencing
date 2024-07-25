@@ -180,20 +180,21 @@ def fig_main(dryrun=True, fontsize=5, threshold=10):
     wgs_mods["proportion"] = wgs_mods["count"].div(wgs_sum)
 
     hmedip_only = callstats_bar_df.groupby("Method").get_group("hMeDIP")
-    for mod, hypothesis in zip(["C", "5mC", "5hmC"], ["less", "less", "greater"]):
-        exp_count = wgs_mods.loc[wgs_mods["mod"] == mod, "count"].to_list()[0]
-        exp_p = wgs_mods.loc[wgs_mods["mod"] == mod, "proportion"].to_list()[0]
+    # for mod, hypothesis in zip(["C", "5mC", "5hmC"], ["less", "less", "greater"]):
+    #     exp_count = wgs_mods.loc[wgs_mods["mod"] == mod, "count"].to_list()[0]
+    #     exp_p = wgs_mods.loc[wgs_mods["mod"] == mod, "proportion"].to_list()[0]
 
-        counts = hmedip_only.loc[hmedip_only["mod"] == mod, "count"].to_numpy()       
-        nobs = hmedip_only.groupby("Replicate")["count"].sum().to_numpy()
+    #     counts = hmedip_only.loc[hmedip_only["mod"] == mod, "count"].to_numpy()       
+    #     nobs = hmedip_only.groupby("Replicate")["count"].sum().to_numpy()
 
-        print("Binom:", mod, stats.binomtest(int(np.sum(counts)), int(np.sum(nobs)), exp_p, hypothesis))
-        print("Z-Test:", mod, proportion.proportions_ztest(int(np.sum(counts)), int(np.sum(nobs)), exp_p))
+        # test = stats.binomtest(int(np.sum(counts)), int(np.sum(nobs)), exp_p, hypothesis)
+        # print("Binom:", mod, test)
+        # print("Z-Test:", mod, proportion.proportions_ztest(int(np.sum(counts)), int(np.sum(nobs)), exp_p))
 
-        data = np.array([[int(np.sum(counts)), int(np.sum(nobs)) - int(np.sum(counts))], 
-                         [exp_count, wgs_sum - exp_count]])
+        # data = np.array([[int(np.sum(counts)), int(np.sum(nobs)) - int(np.sum(counts))], 
+        #                  [exp_count, wgs_sum - exp_count]])
 
-        print("Fisher Exact:", mod, stats.fisher_exact(data, hypothesis))
+        # print("Fisher Exact:", mod, stats.fisher_exact(data, hypothesis))
 
     ttest_df = callstats_bar_df.groupby(["mod", "Method"])
 

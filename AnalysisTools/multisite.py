@@ -105,7 +105,7 @@ class CpGRange(pr.PyRanges):
         return cols_present  
     
     def __annotate_with_multiple(self, annotation_dir_path):
-        annotation_ref = annotation_features.featureRefPyRange(annotation_dir_path).unstrand()
+        annotation_ref = annotation_features.fetch_feature_PyRange(annotation_dir_path).unstrand()
 
         with warnings.catch_warnings():
              warnings.simplefilter(action="ignore", category=FutureWarning)

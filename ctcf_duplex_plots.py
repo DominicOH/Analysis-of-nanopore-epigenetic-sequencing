@@ -22,10 +22,12 @@ def main(test_run=True, min_depth=1, upset_plot=False, filter_distance=500):
 
     file_paths = [root_path + file for file in files]
 
+    print("Loading data")
     with concurrent.futures.ProcessPoolExecutor(len(file_paths)) as load_executor:
         all_duplex_modbeds = [load_executor.submit(ctcf.read_merge, path, test_run, replicate+1) for replicate, path in enumerate(file_paths)]
         all_duplex_modbeds = [modbed.result() for modbed in all_duplex_modbeds]
 
+    print("Loaded data. Calculating distances to CTCF summits")
     with concurrent.futures.ThreadPoolExecutor(len(all_duplex_modbeds)) as violin_executor:
         violin_futures = [violin_executor.submit(modbed.site_summit_distances, min_depth, filter_distance) for modbed in all_duplex_modbeds]
         violin_concat = ctcf.DistDF(pd.concat([future.result() for future in violin_futures])
@@ -37,15 +39,10 @@ def main(test_run=True, min_depth=1, upset_plot=False, filter_distance=500):
 
     patterns = ["C:C", "5mC:5mC", "5hmC:5hmC", "C:5mC", "C:5hmC", "5mC:5hmC"]
     groups = [violin_reads['abs'][violin_reads['Pattern'] == pattern] for pattern in patterns]
-    for pattern in patterns:
-        x = np.where(violin_reads["Pattern"] == pattern, True, False)
-        y = violin_reads["abs"]
-        test = stats.pointbiserialr(x, y)
-        print(pattern, test)        
 
-    print(stats.kruskal(*groups))
-    dunn_result = sp.posthoc_dunn(violin_reads, val_col='abs', group_col='Pattern', p_adjust='bonferroni')
-    print(dunn_result)
+    print("Kruskal-Wallis test:", stats.kruskal(*groups))
+    dunn_result = sp.posthoc_dunn(violin_reads, val_col='abs', group_col='Pattern', p_adjust='holm')
+    print("Dunn post hoc analysis", dunn_result)
 
     with concurrent.futures.ThreadPoolExecutor(len(all_duplex_modbeds)) as merge_executor:
         merged_motif_patterns = merge_executor.map(lambda pf: pf.merge_motif_patterns(min_depth), all_duplex_modbeds)
@@ -74,6 +71,15 @@ def main(test_run=True, min_depth=1, upset_plot=False, filter_distance=500):
                    linewidth=.8,
                    order=patterns,    
                    ax=ax3)
+    
+    print("Correlating patterns with distances")
+    for pattern in patterns:
+        x = np.where(violin_reads["Pattern"] == pattern, True, False)
+        y = violin_reads["abs"]
+        test = stats.pointbiserialr(x, y)
+        print(pattern, test)    
+
+        ax3.annotate(f"r$_{{pb}}$={round(test.statistic, 2)}", (pattern, 600), ha="center")    
     
     counts = violin_reads.groupby("Pattern").size()
     labels = [pattern + f"\nn={counts[pattern]}" for pattern in patterns]
@@ -167,27 +173,11 @@ def main(test_run=True, min_depth=1, upset_plot=False, filter_distance=500):
 
         exp_sum = exp["Count"].sum()
         test = stats.ttest_rel(obs["Proportion"], exp["Proportion"])
-        print(f"T-Test {obs_set} vs. {exp_set}:", test.pvalue)
-        # exp["Proportion"] = exp.eval("Count / @exp_sum")
-
-        # obs_sum = obs["Count"].sum()
-        # exp_freq = exp["Proportion"].mul(obs_sum)
-
-        # # print(obs_sum, exp_freq.sum())
-
-        # assert round(exp_freq.sum()) == obs_sum
-
-        # data = np.array([obs["Count"].to_numpy(), exp_freq.to_numpy()])
-        # data = data.astype(int)
-
-        # # print(data)
-
-        # v = contingency.association(data)
-        # stat, p, dof, _ = stats.chi2_contingency(data, lambda_="log-likelihood")        
+        print(f"T-Test {obs_set} vs. {exp_set}:", test, "n1=", len(obs), "n2=", len(exp))       
         return 
     
     for pattern in patterns:    
-        print(pattern, "Genome vs. Genome sanity test :", comparer("Genome average", "Genome average", pattern))
+        # print(pattern, "Genome vs. Genome sanity test :", comparer("Genome average", "Genome average", pattern))
         print(pattern, "Genome vs. Motif :", comparer("Genome average", "CTCF motif", pattern))
         print(pattern, "Genome vs. Summit :", comparer("Genome average", "ChIP summit", pattern))
         print(pattern, "Motif vs. Summit :", comparer("CTCF motif", "ChIP summit", pattern))
