@@ -3,7 +3,7 @@ import pyranges as pr
 import warnings
 import numpy as np
 
-ctcf_chip = pr.PyRanges(pd.read_table("data/ctcf/ChIP2MACS2/MACS2/ENCSR000CBN_peaks.narrowPeak", 
+ctcf_chip = pr.PyRanges(pd.read_table("data/ctcf/ENCSR000CBN/ChIP2MACS2/MACS2/ENCSR000CBN_peaks.narrowPeak", 
                                       names=["Chromosome", "Start", "End", "Name", "Pileup", 
                                              "Strand", "FoldDifference", "pValue", "qValue", 
                                              "Peak"],
@@ -11,16 +11,14 @@ ctcf_chip = pr.PyRanges(pd.read_table("data/ctcf/ChIP2MACS2/MACS2/ENCSR000CBN_pe
                                                "pValue", "qValue"]), 
                                       int64=True)
 
-ctcf_motif = pr.PyRanges(pd.read_table("feature_references/CTCF_mm39_jaspar_sorted.tsv",
-                                       names=["Chromosome", "Start", "End", "Width", "Strand",
-                                              "Name", "Score", "pValue", "qValue", "Sequence"],
-                                       usecols=["Chromosome", "Start", "End", "Strand"],
-                                       skiprows=1), 
-                                       int64=True).merge()
+ctcf_motif = pr.PyRanges(pd.read_table("data/ctcf/MA0139.1.tsv", 
+                                       names=["Chromosome", "Start", "End", "Name", "Score", "Score2", "Strand"],
+                                       usecols=["Chromosome", "Start", "End", "Strand"]),
+                                       int64=True)
 
 print(len(ctcf_motif), "CTCF motifs")
 
-ctcf_summits = pr.PyRanges(pd.read_table("data/ctcf/ChIP2MACS2/MACS2/ENCSR000CBN_summits.bed", 
+ctcf_summits = pr.PyRanges(pd.read_table("data/ctcf/ENCSR000CBN/ChIP2MACS2/MACS2/ENCSR000CBN_summits.bed", 
                                          names=["Chromosome", "Start", "End", "Name", "Score"]),
                            int64=True).merge()
 
@@ -103,8 +101,8 @@ class PatternFrame:
 
         return MeltDF(df, min_depth)
     
-    def site_summit_distances(self, min_depth):
-        return self.melt_patterns(min_depth).distance_to_summit()
+    def site_summit_distances(self, min_depth, filter_distance):
+        return self.melt_patterns(min_depth).distance_to_summit(filter_distance)
            
 class MeltDF(PatternFrame):
     def __init__(self, pattern_df: pd.DataFrame, min_depth):
@@ -125,7 +123,7 @@ class MeltDF(PatternFrame):
 
         return pie_data
     
-    def distance_to_summit(self):
+    def distance_to_summit(self, filter_distance=np.inf):
         df = self.replace_modnames().pattern_df
 
         distances = (pr.PyRanges(df, int64=True)
@@ -133,7 +131,10 @@ class MeltDF(PatternFrame):
                      .as_df())
         
         distances = (distances.groupby(["Distance", "Pattern"], observed=True).agg({"Count" : sum})
-                     .reset_index())        
+                     .reset_index())
+        
+        distances["abs"] = abs(distances["Distance"])
+        distances = distances.loc[distances["abs"] <= filter_distance]        
         
         return distances
     
@@ -144,7 +145,7 @@ class DistDF:
     def explode_reads(self) -> pd.DataFrame:
         df = self.df
 
-        df =  df.loc[df.index.repeat(df['Count']), ("Pattern", "Distance")]
+        df =  df.loc[df.index.repeat(df['Count']), ("Pattern", "Distance", "abs")]
         return df
                 
 # removal of overlapping binding sites to prevent duplication downstream 

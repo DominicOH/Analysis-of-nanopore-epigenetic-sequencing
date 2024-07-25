@@ -3,7 +3,6 @@
 """
 Functions to load and process the files produced using Oxford Nanopore Technologies Modkit and Bismark for downstream analysis.
 
-Developed using mod_kit 0.1.13 and Bismark Version: v0.24.0. 
 """
 
 ##### Module imports #####
@@ -11,7 +10,12 @@ Developed using mod_kit 0.1.13 and Bismark Version: v0.24.0.
 import pandas as pd
 import argparse
 from math import sqrt
-from helpers import timer
+import numpy as np
+import time
+try: 
+    from helpers import timer
+except:
+    from AnalysisTools.helpers import timer
 
 ##### Function definitions #####
 
@@ -49,8 +53,7 @@ def readModkit(
         path: str, 
         min_depth: int = 1,
         apply_max_depth: bool = False,
-        include_raw_counts: bool = False,
-        **kwargs
+        include_raw_counts: bool = False
 ):
     """
     Reads the bedmMethyl output of Modkit pileup into a pd.DataFrame. 
@@ -66,7 +69,16 @@ def readModkit(
     df_init = pd.read_csv(path, 
                           sep="\t", 
                           names=colnames,
-                          **kwargs
+                          dtype={
+                              "readCount" : np.int16,
+                              "N_mod" : np.int16, 
+                              "N_canonical" : np.int16, 
+                              "N_other" : np.int16, 
+                              "N_delete" : np.int16, 
+                              "N_fail" : np.int16, 
+                              "N_diff" : np.int16, 
+                              "N_nocall" : np.int16
+                                 }
 )
     
     df_filtered = filterDepth(df_init, min_depth, apply_max_depth)
@@ -102,11 +114,10 @@ def readModkit(
 
 def readBismarkZeroCov(
         path: str, 
-        modbase: str, 
+        modbase: str = None, 
         min_depth: int = 1,
         apply_max_depth: bool = False,
-        include_raw_counts: bool = False,
-        **kwargs):
+        include_raw_counts: bool = False):
     
     """
     Reads the output file of Bismark methylation extractor. Requires the bed format output produced with the options: -p --bedGraph --zero_based --comprehensive
@@ -117,52 +128,61 @@ def readBismarkZeroCov(
     :return: Pandas DataFrame object 
 
     """
-
-    if modbase == "5mC":
+    if not modbase:
+        meth_col = "percentMeth_mod"
+        mod_count = "N_mod"
+    elif modbase == "5mC":
         meth_col = "percentMeth_5mC"
         mod_count = "N_mC"
     elif modbase == "5hmC":
         meth_col = "percentMeth_5hmC"
         mod_count = "N_hmC"
     else:
-        raise ValueError("Please enter a mod type: '5mC' or '5hmC'")
+        raise ValueError("Mod_types entered must equal: '5mC' or '5hmC'")
 
-    df = pd.read_csv(path, sep="\t", names=[
-            "Chromosome", "Start", "End", meth_col, mod_count, "N_unmod"], **kwargs).assign(readCount = lambda row: row[mod_count] + row["N_unmod"])
+    df = (pd.read_csv(path, sep="\t", names=[
+            "Chromosome", "Start", "End", meth_col, mod_count, "N_unmod"],
+            dtype={
+                "mod_count" : np.int16,
+                "N_unmod" : np.int16
+            })
+            .assign(readCount = lambda row: row[mod_count] + row["N_unmod"]))
         
     if min_depth:
         df = filterDepth(df, min_depth, apply_max_depth)
 
+    df["readCount"] = df["readCount"].astype(np.int16)
+
     if include_raw_counts:
         return df
     else: 
-        return df.drop(columns=["N_mC", "N_hmC", "N_unmod"], errors="ignore")
-    
-def open_single_file(file, min_depth=1, modbase=None, quiet=True, **kwargs):
-    if not quiet:
-        print(f"Opening {file}")
-    if checkBisOrModkit(file) == "Bismark":
-        if not modbase:
-            raise ValueError("Bismark input requires modbase specification in args. ['5mC'|'5hmC']")
-        
-        mod_df = readBismarkZeroCov(file, modbase, min_depth, **kwargs)
+        return df.drop(columns=["N_mC", "N_hmC", "N_mod", "N_unmod"], errors="ignore")
+
+def open_single_file(file, min_depth=1, modbase=None, quiet=False, include_raw_counts=False):
+    s = time.perf_counter()
+    if checkBisOrModkit(file) == "Bismark":        
+        mod_df = readBismarkZeroCov(file, modbase, min_depth, include_raw_counts=include_raw_counts)
     elif checkBisOrModkit(file) == "Modkit": 
-        mod_df = readModkit(file, min_depth, **kwargs)
-    
+        mod_df = readModkit(file, min_depth, include_raw_counts=include_raw_counts)
+    e = time.perf_counter()
+
+    if not quiet:
+        print(f"Read {file} in {e-s} seconds.")
     return mod_df
 
 @timer
-def read_modbed(path, outpath, min_depth=1, verbose=False):
+def read_modbed(path, outpath, min_depth=1, include_raw_counts=False, quiet=False):
     if type(path) == list:
         for path, outpath in zip(path, outpath):
             print(f"Reading from {path}")
-            df = open_single_file(path, min_depth, verbose)
+
+            df = open_single_file(path, min_depth, include_raw_counts=include_raw_counts, quiet=quiet)
             print(f"Success. Saving to {outpath}")
             df.to_csv(f"{outpath}", sep="\t", header=True, index=False)
         return
     elif type(path) == str:
         print(f"Reading from {path}")
-        df = open_single_file(path, min_depth, verbose)
+        df = open_single_file(path, min_depth, include_raw_counts=include_raw_counts, quiet=quiet)
         print(f"Success. Saving to {outpath}")
         return df.to_csv(f"{outpath}", sep="\t", header=True, index=False)
         
@@ -173,11 +193,11 @@ if __name__=="__main__":
                         prog = "read_modbed",
                         description = "Reads a bedfile containing modified base information, such as that produced by ONT's modkit or Bismark.")
     parser.add_argument("filenames", action="store", nargs="+")
-    parser.add_argument("-o ", "--outpath", action="store", nargs="+", type=str, required=True) 
+    parser.add_argument("-o", "--outpath", action="store", nargs="+", type=str, required=True) 
+    parser.add_argument("--include_raw_counts", action="store_true", default=False)
     parser.add_argument("--min_depth", action="store", dest="min_depth", default=1, type=int) 
-    parser.add_argument("-v", "--verbose", action="store_true", default=False) 
+    parser.add_argument("-q", "--quiet", action="store_true", default=False) 
 
     args = parser.parse_args()
-
-    read_modbed(args.filenames, args.outpath, args.min_depth, args.verbose)
+    read_modbed(args.filenames, args.outpath,  min_depth=args.min_depth, include_raw_counts=args.include_raw_counts, quiet=args.quiet)
     print("Done")
