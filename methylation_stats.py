@@ -4,6 +4,7 @@ from AnalysisTools.helpers import timer
 from scipy import stats
 import concurrent.futures
 import numpy as np
+import pingouin as pg
 
 def averages(modbeds, col):
         means = []
@@ -60,16 +61,16 @@ def stats_main(dryrun):
     
     x, y = averages(nano_modbeds, "percentMeth_5mC"), averages(oxbs_modbeds, "percentMeth_5mC")
     print(x, y)
-    test = stats.ttest_ind(x, y, equal_var=False)
+    test = pg.ttest(x, y, paired=False)
     print("5mC averages:", test)
 
     x, y = averages(nano_modbeds, "percentMeth_5hmC"), averages(tab_modbeds, "percentMeth_5hmC")
     print(x, y)
-    test = stats.ttest_ind(x, y, equal_var=False)
+    test = pg.ttest(x, y, paired=False)
     print("5hmC averages:", test)
 
     x, y = count_hypo(nano_modbeds, "percentMeth_5hmC"), count_hypo(tab_modbeds, "percentMeth_5hmC")
-    test = stats.ttest_ind(x, y, equal_var=False)
+    test = pg.ttest(x, y, paired=False)
     print("5hmC hypo:", test)
 
     nano_oxbs = pd.concat([nanopore_average, ox_average], join="inner").pivot_table(values="percentMeth_5mC", index=["Chromosome", "Start", "End"], columns="Method").dropna()

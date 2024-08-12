@@ -12,6 +12,7 @@ from scipy.stats import contingency
 from scipy import stats
 import AnalysisTools.ctcf_site_tools as ctcf
 import scikit_posthocs as sp
+import pingouin as pg
 
 @timer
 def main(test_run=True, min_depth=1, upset_plot=False, filter_distance=500):
@@ -172,7 +173,7 @@ def main(test_run=True, min_depth=1, upset_plot=False, filter_distance=500):
         exp = motif_vs_chip.groupby(["Type", "Pattern"]).get_group((exp_set, pattern)).reset_index()
 
         exp_sum = exp["Count"].sum()
-        test = stats.ttest_rel(obs["Proportion"], exp["Proportion"])
+        test = pg.ttest(obs["Proportion"], exp["Proportion"], True)
         print(f"T-Test {obs_set} vs. {exp_set}:", test, "n1=", len(obs), "n2=", len(exp))       
         return 
     
