@@ -13,6 +13,7 @@ from matplotlib.gridspec import GridSpec
 from scipy import stats
 from statsmodels.stats import proportion
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+import pingouin as pg
 
 def tile_wgs(df, tile_size=500):
     tiles = (pr.PyRanges(df.reset_index())
@@ -111,7 +112,7 @@ def fig_main(dryrun=True, fontsize=5, threshold=10):
     nanopore_hmedip_dirpath = "/mnt/data1/doh28/data/nanopore_hmc_validation/hmedip_nanopore/summary/"
     narrow_peaks = pd.concat(load_hmedip(nanopore_hmedip_dirpath))
 
-    blacklist = pr.read_bed("data/hmedip/blacklist/mm39-blacklist.v2_adj.bed")
+    blacklist = pr.read_bed("/mnt/data1/doh28/data/reference_genomes/mm39/mm39-blacklist.v2_sorted.bed")
     # these are regions not currently on the blacklist, inspected in igv, 
     # found to likely represent repetitive elements
     belongs_on_blacklist = pr.PyRanges(
@@ -202,8 +203,7 @@ def fig_main(dryrun=True, fontsize=5, threshold=10):
         genome = ttest_df.get_group((mod, "WGS"))
         n_hmedip = ttest_df.get_group((mod, "hMeDIP"))
         
-        print("T-Test:", mod, stats.ttest_ind(genome["proportion"].to_numpy(), n_hmedip["proportion"].to_numpy(),
-                                              equal_var=False))
+        print("T-Test:", mod, pg.ttest(genome["proportion"].to_numpy(), n_hmedip["proportion"].to_numpy(), paired=False))
 
     sns.barplot(callstats_bar_df.sort_values("Method"), 
                 x="mod",
@@ -284,7 +284,7 @@ def fig_main(dryrun=True, fontsize=5, threshold=10):
 
     # presentation_fig.savefig("plots/presentation_hMeDIPseq.svg", transparent=True)
 
-    public_hmedip_dirpath = "/mnt/data1/doh28/data/public/PRJNA134133_hMeDIP/macs2/ucsc_converted/"
+    public_hmedip_dirpath = "/mnt/data1/doh28/data/public/PRJNA134133_hMeDIP/ucsc_converted/"
     public_hmedip = pd.concat([table.assign(Replicate = i) for i, table in enumerate(load_hmedip(public_hmedip_dirpath))])
 
     g_tiles = pr.genomicfeatures.tile_genome(chromSizePr(), 500).as_df()
