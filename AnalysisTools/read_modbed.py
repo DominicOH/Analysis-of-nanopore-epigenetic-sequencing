@@ -171,7 +171,7 @@ def open_single_file(file, min_depth=1, modbase=None, quiet=False, include_raw_c
     return mod_df
 
 @timer
-def read_modbed(path, outpath, min_depth=1, include_raw_counts=False, quiet=False):
+def main(path, outpath, min_depth=1, include_raw_counts=False, quiet=False):
     if type(path) == list:
         for path, outpath in zip(path, outpath):
             print(f"Reading from {path}")
@@ -199,5 +199,5 @@ if __name__=="__main__":
     parser.add_argument("-q", "--quiet", action="store_true", default=False) 
 
     args = parser.parse_args()
-    read_modbed(args.filenames, args.outpath,  min_depth=args.min_depth, include_raw_counts=args.include_raw_counts, quiet=args.quiet)
+    main(args.filenames, args.outpath,  min_depth=args.min_depth, include_raw_counts=args.include_raw_counts, quiet=args.quiet)
     print("Done")

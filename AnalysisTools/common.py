@@ -5,31 +5,6 @@ import os
 import subprocess
 import concurrent.futures
 
-def load_controls(dry_run: bool, **kwargs):
-    """
-    Fetches modkit/bismark data. Order of return is: zymo_modified, zymo_unmodified. 
-
-    ::bool dry_run:: Whether to return data for internal testing.  
-    """
-
-    if not dry_run:
-        zymo_modified = "data/modbases/merged_reps/zymo_methylated.merged.bed"
-        zymo_unmodified = "data/modbases/merged_reps/zymo_unmodified.merged.bed"
-
-    else:
-        zymo_modified = "data/dryruns/merged/zymo_methylated.merged.bed.head"
-        zymo_unmodified = "data/dryruns/merged/zymo_unmodified.merged.bed.head"
-
-    paths = [zymo_modified, zymo_unmodified]
-
-    with futures.ProcessPoolExecutor(2) as ppe:
-        all_futures = [ppe.submit(pd.read_table, path, sep="\t", 
-                                  names=["Chromosome", "Start", "End", "readCount", "N_mC", "N_hmC", "percentMeth_5mC", "percentMeth_5hmC"],
-                                  **kwargs) for path in paths]
-        all_dfs = [future.result() for future in all_futures]
-
-    return all_dfs
-
 def openReps(reps_path, select_cols=None, insert_cols=None, modbase=None, min_depth=1, quiet=True, **kwargs):
     """
     Opens a directory of modkit '.bedMethyl' files or bismark_methylation_extractor '.zero.cov' files into a pd.Dataframe. 
@@ -60,8 +35,13 @@ def openReps(reps_path, select_cols=None, insert_cols=None, modbase=None, min_de
 
     return df
 
-def read_table(path, usecols: list=None):
+def read_table(path, usecols: list=None, test_run: bool=False):
     default_usecols = ["Chromosome", "Start", "End"]
+
+    if test_run:
+        nrows=100000
+    else: 
+        nrows=None
 
     if usecols:
         if type(usecols) == list:
@@ -70,7 +50,8 @@ def read_table(path, usecols: list=None):
             default_usecols.append(usecols)
 
     df = pd.read_table(path, sep="\t", 
-                       usecols=default_usecols)
+                       usecols=default_usecols,
+                       nrows=nrows)
     return df
 
 def fetch_modbeds(dirpath, usecols=None):
@@ -115,37 +96,17 @@ def fetch_tab(usecols, dryrun=True):
 
     return map(lambda path: read_table(path, usecols).rename(columns={"N_mod" : "N_5hmC"}), [tab_1_path, tab_2_path, tab_3_path])
 
-def fetch_controls(usecols, dryrun=True):
-    if dryrun:
-        root_path = "data/dryruns/modbeds/"
-        
-        zymo_m1 = root_path + "zymo_wga_methylated_rep1.masked.bed.modbed"
-        zymo_m2 = root_path + "zymo_wga_methylated_rep2.masked.bed.modbed"
-
-        zymo_u1 = root_path + "zymo_wga_unmodified_rep1.masked.bed.modbed"
-        zymo_u2 = root_path + "zymo_wga_unmodified_rep2.masked.bed.modbed"
-
-    else:
-        root_path = "data/modbases/modbeds/"
-        
-        zymo_m1 = root_path + "zymo_methylated_rep1.modbed"
-        zymo_m2 = root_path + "zymo_methylated_rep2.modbed"
-
-        zymo_u1 = root_path + "zymo_unmodified_rep1.modbed"
-        zymo_u2 = root_path + "zymo_unmodified_rep2.modbed"
-
-    paths = [zymo_m1, zymo_m2, zymo_u1, zymo_u2]
+def fetch_controls(usecols, test_run=False):
+    zymo_controls = ["data/modbases/controls/zymo_wga_methylated_rep1.sorted.modbed", "data/modbases/controls/zymo_wga_methylated_rep2.sorted.modbed",
+                     "data/modbases/controls/zymo_wga_unmodified_rep1.sorted.modbed", "data/modbases/controls/zymo_wga_unmodified_rep2.sorted.modbed"]
 
     with concurrent.futures.ProcessPoolExecutor(4) as ppe:
-        futures = [ppe.submit(read_table, path, usecols) for path in paths]
+        futures = [ppe.submit(read_table, path, usecols, test_run) for path in zymo_controls]
         ctrl_dfs = [future.result() for future in futures]
 
         [df.rename(columns={"N_mC" : "N_5mC", "N_hmC" : "N_5hmC"}, inplace=True) for df in ctrl_dfs]
 
-        pos_ctrls = ctrl_dfs[:2]
-        neg_ctrls = ctrl_dfs[2:]
-
-    return pos_ctrls, neg_ctrls
+    return ctrl_dfs
 
 def calculate_percentages(df, cols):
     if type(cols) == list:
