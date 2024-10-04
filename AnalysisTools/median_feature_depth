@@ -1,0 +1,51 @@
+#!/bin/bash 
+
+usage() {
+    echo "Usage: $0 [ARGS]"
+	echo "Arguments:"
+	echo "-f|--files	      				BED format files with a depth column. Pass in quotations if using wildcards."
+	echo "-r|--refs    					Reference files to use in BED3 format."
+	echo "-d|--depth-col					Depth column to use in <files>."
+	echo "-f|--feature-col				What column will the feature identifier be in? Typically <file> length + 1."
+	echo "-o|--outdir					Directory to write output files to."
+}
+
+OPTSTRING=":f:r:d:t:o:h"
+##### Arg parsing #####
+while getopts ${OPTSTRING} opt; do
+  case ${opt} in
+	f|files) FILES=$OPTARG;;
+    r|refs) REFS=$OPTARG;;
+    d|depth-col) DEPTH_COL=$OPTARG;;
+	t|feature-type) FEATURE_COL=$OPTARG;;
+	o|outdir) OUT_DIR=$OPTARG;;
+    h|?) 
+		usage
+		exit 0 
+		;;
+  esac
+done
+
+if [ -z "$REFS" ] || [ -z "$DEPTH_COL" ] || [ -z "$FEATURE_COL" ] || [ -z "$OUT_DIR" ]; then
+  echo "Required values not provided."
+  usage
+  exit 1
+fi
+
+for file in $FILES;
+do
+	echo "Searching $file" ;
+	bedtools intersect -a $file \
+	-b $REFS/* \
+	-names CGI Promoter Exons Gene Intergenic Intron -wa -wb |\
+	cut -f 1-3,$DEPTH_COL,$FEATURE_COL - |\
+	uniq >\
+	$OUT_DIR/$(basename $file .bed).temp && 
+	echo "Made feature intersects temporary file. Sorting and grouping..." ; 
+	
+	sort -k5,5 --parallel 8 $OUT_DIR/$(basename $file .bed).temp |\
+	bedtools groupby -i "stdin" -g 5 -c 4 -o median >\
+	$OUT_DIR/$(basename $file .bed).coverage && 
+	echo "Completed grouping with median feature depth in $OUT_DIR/$(basename $file .bed).coverage"
+	rm $OUT_DIR/$(basename $file .bed).temp
+done
