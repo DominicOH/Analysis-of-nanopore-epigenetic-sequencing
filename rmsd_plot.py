@@ -7,6 +7,7 @@ import string
 def main():
 
     mpl.rc('font', size=5)
+    sns.set_style("whitegrid")
 
     fig, axes = plt.subplots(3, 1, figsize=(89/25.4, 120/25.4), dpi=600, layout="constrained")
     ax1, ax2, ax3 = axes
@@ -55,7 +56,7 @@ def main():
 
     for i, ax in enumerate(axes):
         ax.set_xticks(range(5, 16, 1))
-        sns.move_legend(ax, "lower left", frameon=False, title=None) 
+        sns.move_legend(ax, "lower left", frameon=True, title=None) 
         ax.set_xlim(5, 15)
         ax.set_xlabel("Minimum depth at CpG site")
         ax.set_title(string.ascii_lowercase[i], fontweight="bold", loc="left")
@@ -66,6 +67,7 @@ def main():
     for ax in [ax1, ax3]:
         ax.set_ylim(0, 25) 
         ax.set_yticks(range(0, 26, 5))
+        ax.set_ylabel("Root Mean Square Deviation (%)")
 
     sns.despine()
     fig.savefig("plots/rmsd_plot.png")

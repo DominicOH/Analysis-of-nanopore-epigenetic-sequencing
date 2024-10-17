@@ -20,6 +20,7 @@ import pyranges as pr
 import concurrent.futures
 import os
 from itertools import chain
+from scipy import stats
 
 CYTOSINES_IN_CPG = 18518250 # Count of all genomic CpG sites. Ignores masked positions. Produced using: 
 # awk '{IGNORECASE=0}/CG/{ ++count }END{ print count*2 }' mm39.fa 
@@ -66,7 +67,7 @@ class GenomeCov:
     def median(self):
         return self.__median
     
-    def uncovered_sites(self):
+    def covered_proportion(self):
         df = self.df
         return (1 - df.loc[df["Depth"] < 5, "FractionCoverage"].sum())
    
@@ -225,20 +226,22 @@ def make_coverage_comparison(data: list[GenomeCov], ax: plt.Axes):
     all_proportions = pd.DataFrame({
         "Tech" : [*["Nanopore"]*4, *["oxBS"]*2, *["TAB"]*3],
         "Replicate" : [genomecov.replicate for genomecov in data], 
-        "Proportion covered" : [genomecov.uncovered_sites() for genomecov in data]})
+        "Proportion covered" : [genomecov.covered_proportion() for genomecov in data]})
 
     sns.barplot(all_proportions, 
                 y="Tech", x="Proportion covered",
                 hue="Tech", palette="Accent",
                 errorbar="sd", err_kws={"lw": .6}, capsize=.3, 
                 order=["Nanopore", "oxBS", "TAB"],
+                hue_order=["Nanopore", "TAB", "oxBS"],
                 width=.6,
                 ax=ax)
     
-    sns.swarmplot(all_proportions, 
+    sns.stripplot(all_proportions, 
                   y="Tech", x="Proportion covered",
-                  color="k",
+                  color="k", size=3,
                   ax=ax)
+    
     ax.set_ylabel(None)
     ax.set_xlabel(r"Proportion covered at depth$\geq$5x")
     return
@@ -255,16 +258,18 @@ def main():
     sns.set_style("ticks")
     mpl.rc('font', size=5)
 
-    fig = plt.figure(dpi=600, layout="constrained")
+    fig = plt.figure(figsize=(180/25.4, 120/25.4), dpi=600, layout="constrained")
     gs = GridSpec(3, 6, fig)
 
-    median_barplot_ax = fig.add_subplot(gs[0, :2])
-    coverage_comparison_ax = fig.add_subplot(gs[0, 2:4])
-    nano_hist_ax = fig.add_subplot(gs[1, :2])
-    oxbs_hist_ax = fig.add_subplot(gs[1, 2:4])
-    tab_hist_ax = fig.add_subplot(gs[1, 4:])
-    feature_coverage_ax = fig.add_subplot(gs[2, :3])
-    gc_depth_ax = fig.add_subplot(gs[2, 3:])
+    nano_hist_ax = fig.add_subplot(gs[0, :2])
+    oxbs_hist_ax = fig.add_subplot(gs[0, 2:4])
+    tab_hist_ax = fig.add_subplot(gs[0, 4:])
+    median_barplot_ax = fig.add_subplot(gs[1, 0])
+    median_cpg_ax = fig.add_subplot(gs[1, 1])
+    gc_depth_ax = fig.add_subplot(gs[1, 2:4])
+    gc_vmedian_ax = fig.add_subplot(gs[1, 4:])
+    feature_coverage_ax = fig.add_subplot(gs[2, :4])
+    coverage_comparison_ax = fig.add_subplot(gs[2, 4:])
 
     print("Loading bedtools genomecov datasets...")    
     genomecov_paths = ["/mnt/data1/doh28/data/nanopore_hmc_validation/nanopore_wgs/coverage_stats/genome/", 
@@ -283,14 +288,15 @@ def main():
     sns.barplot(all_medians, 
                 x="Tech", y="Median",
                 hue="Tech", palette="Accent",
-                order=["Nanopore", "oxBS", "TAB"],
+                order=["TAB", "oxBS", "Nanopore"],
                 errorbar="sd", err_kws={"lw": .6}, capsize=.3, width=.6,
                 ax=median_barplot_ax)
     
-    sns.swarmplot(all_medians, 
-                    x="Tech", y="Median",
-                    color="k",
-                    ax=median_barplot_ax)
+    sns.stripplot(all_medians, 
+                  x="Tech", y="Median",
+                  order=["TAB", "oxBS", "Nanopore"],
+                  color="k", size=3, 
+                  ax=median_barplot_ax)
     
     median_barplot_ax.set_ylabel("Median depth (genomic)")
     median_barplot_ax.set_xlabel(None)
@@ -316,6 +322,33 @@ def main():
         ax.set_xlabel("Depth at CpG")
         ax.set_title(title, ha="center")
 
+    print("Plotting median CpG depth")
+
+    cpg_median_depth_df = pd.DataFrame({
+        "Tech" : [*["Nanopore"]*4, *["TAB"]*3, *["oxBS"]*2],
+        "Replicate" : [i for i in range(9)], 
+        "CpGDepth" : [bed.median for bed in chain.from_iterable(all_beds)]  
+    })
+
+    sns.barplot(cpg_median_depth_df,
+                x="Tech", y="CpGDepth",
+                hue="Tech", palette="Accent",
+                order=["TAB", "oxBS", "Nanopore"],
+                errorbar="sd", err_kws={"lw": .6}, capsize=.3, width=.6,
+                ax=median_cpg_ax)
+    
+    sns.stripplot(cpg_median_depth_df,
+                  x="Tech", y="CpGDepth",
+                  hue="Tech", color="k", size=3,
+                  order=["TAB", "oxBS", "Nanopore"],
+                  ax=median_cpg_ax)
+    
+    median_cpg_ax.set_xlabel(None)
+    median_cpg_ax.set_ylabel("Median depth at CpG (stranded)")
+
+    for ax in [median_barplot_ax, median_cpg_ax]:
+        ax.tick_params("x", labelrotation=15)
+
     print("Plotting coverage comparison")
     make_coverage_comparison([*nanopore_genomecovs, *oxbs_genomecovs, *tab_genomecovs], coverage_comparison_ax)
 
@@ -336,16 +369,28 @@ def main():
                   x="Context", y="DiffToGenome",
                   hue="Tech", palette="Accent", 
                   order=["Intergenic", "Gene", "Exons", "Intron", "Promoter", "CGI"], 
-                  dodge=True, size=4,
+                  hue_order=["Nanopore", "TAB", "oxBS"],
+                  dodge=True, size=5, jitter=True,
                   ax=feature_coverage_ax)
         
-    feature_coverage_ax.set_ylabel("% difference to median depth")
+    feature_coverage_ax.set_ylabel("Difference to median\nCpG depth (%)")
+    feature_coverage_ax.set_xlabel("CpG context")
     feature_coverage_ax.axhline(0, lw=.8, c="grey", ls=":")
     feature_coverage_ax.axvline(1.5, lw=.8, c="k")
     feature_coverage_ax.axvline(3.5, lw=.8, c="k")
+    
     sns.move_legend(feature_coverage_ax, "lower left", title=None)
 
     ### GC% depth comparison ### 
+    # mouse mean gc % content: 
+    
+    mm39 = pd.read_table("/mnt/data1/doh28/data/reference_genomes/mm39/mm39.fa.nucBed")
+    total_bases = mm39[["6_num_A", "7_num_C", "8_num_G", "9_num_T"]].sum().sum()
+    total_gc = mm39[["7_num_C", "8_num_G"]].sum().sum()
+
+    mean_gc = (total_gc/total_bases)*100
+
+
     print("Plotting GC% context vs depth")
 
     gc_paths = files_from_dir("data/depth_analysis/gc/")
@@ -359,14 +404,54 @@ def main():
                                                         range(len(gc_futures)))]).reset_index()
 
     sns.lineplot(gc_data,
-                 x="GCBin", y="DiffToGenome", 
+                 x="GCBin", y="MedianDepth", 
                  hue="Tech", palette="Accent", 
-                 lw=.8, style="Tech",
+                 lw=1, style="Tech",
                  ax=gc_depth_ax)
     
-    gc_depth_ax.set_ylabel("% difference to median depth")
-    gc_depth_ax.set_xlabel("GC in 100bp")
-    sns.move_legend(gc_depth_ax, "upper right", title=None)
+    gc_depth_ax.axvline(mean_gc, c="grey", ls="dashdot", lw=0.8)
+    
+    handles_median, leg_labels_median = gc_depth_ax.get_legend_handles_labels()
+    gc_data_grouped = gc_data.groupby("Tech")
+
+    new_labels_median = []
+    new_labels_percentage = []
+    for group, label in zip(gc_data_grouped.groups, leg_labels_median):
+        data = gc_data.groupby("Tech").get_group(group).dropna()
+        median_stat = stats.spearmanr(data["MedianDepth"], data["GCBin"]).statistic
+        median_p = stats.spearmanr(data["MedianDepth"], data["GCBin"]).pvalue
+
+        print(f"Median depth vs. GC% for {group}: $\\rho$={median_stat}, p={median_p}, n={len(data)}")
+
+        percentage_stat = stats.spearmanr(data["DiffToGenome"], data["GCBin"]).statistic
+        percentage_p = stats.spearmanr(data["DiffToGenome"], data["GCBin"]).pvalue
+
+        print(f"Percentage from median depth vs. GC% for {group}: $\\rho$={percentage_stat}, p={percentage_p}, n={len(data)}")
+
+        new_labels_median.append(label + f", $\\rho$={round(median_stat, 2)}")
+        new_labels_percentage.append(label + f", $\\rho$={round(percentage_stat, 2)}")
+
+    gc_depth_ax.legend(handles_median, new_labels_median)
+    gc_depth_ax.set_ylabel("Depth at CpG")
+    
+    sns.lineplot(gc_data,
+                 x="GCBin", y="DiffToGenome", 
+                 hue="Tech", palette="Accent", 
+                 lw=1, style="Tech",
+                 ax=gc_vmedian_ax)
+    
+    handles_percent, _ = gc_vmedian_ax.get_legend_handles_labels()
+    gc_vmedian_ax.axvline(mean_gc, c="grey", ls="dashdot", lw=0.8)
+    gc_vmedian_ax.set_ylabel("Difference to median\nCpG depth (%)")
+    gc_vmedian_ax.legend(handles_percent, new_labels_percentage)
+
+    for ax in [gc_depth_ax, gc_vmedian_ax]:
+        ax.set_xlim(5, 100)
+        ax.set_xlabel("GC in 100bp")
+        sns.move_legend(ax, "lower left", 
+                    title=None, frameon=True,
+                    bbox_to_anchor=(.5, .8)
+                    )
 
     fig.savefig("plots/compare_coverage.png")
     if not test_run:
