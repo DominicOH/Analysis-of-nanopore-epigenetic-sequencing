@@ -18,5 +18,4 @@ data_tables/*
 DNMTools_datasets/*
 feature_references/*
 test_data/*
-data/*
 .vscode
