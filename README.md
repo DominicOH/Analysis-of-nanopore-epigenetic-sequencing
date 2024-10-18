@@ -1,4 +1,4 @@
-# Analysis-of-nanopore-epigenetic-sequencing
+# Double and single stranded detection of 5-methylcytosine and 5-hydroxymethylcytosine with nanopore sequencing
 
 These scripts and notebooks contain code used in the analysis of nanopore sequence data for the publication: Double and single stranded detection of 5-methylcytosine and 5-hydroxymethylcytosine with nanopore sequencing (_in press_). 
 
