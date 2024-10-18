@@ -15,8 +15,6 @@ from AnalysisTools.helpers import timer
 import pandas as pd
 import string
 import subprocess
-from AnalysisTools.annotation_features import Annotator
-import pyranges as pr
 import concurrent.futures
 import os
 from itertools import chain
@@ -392,7 +390,8 @@ def main():
 
 
     print("Plotting GC% context vs depth")
-
+    # Follow documentation under GCBed for instructions on producing these files.
+    
     gc_paths = files_from_dir("data/depth_analysis/gc/")
     with concurrent.futures.ProcessPoolExecutor(3) as ppe:
         gc_futures = [ppe.submit(bed.compare_to_gc, path)

@@ -1,8 +1,14 @@
 import pandas as pd
+import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import string
+
+
+def mean_of_means(df: pd.DataFrame):
+    df["Mean"] = df[["Mean_X", "Mean_Y"]].mean(axis=1)
+    return df
 
 def main():
 
@@ -17,6 +23,8 @@ def main():
 
     tab_ia = pd.read_table("data/rmsd/tab_intrassay.tsv").assign(Method="TAB")
     ox_ia = pd.read_table("data/rmsd/oxbs_intrassay.tsv").assign(Method="oxBS")
+    
+    nanopore_ia_mc, nanopore_ia_hmc, tab_ia, ox_ia = map(mean_of_means, [nanopore_ia_mc, nanopore_ia_hmc, tab_ia, ox_ia])
 
     all_iarmsd = (pd.concat([nanopore_ia_mc, nanopore_ia_hmc, ox_ia, tab_ia])
                   .drop_duplicates(['Depth', 'Size', 'RMSD']))
@@ -31,7 +39,7 @@ def main():
     ax1.set_title("Intra-assay deviation")
 
     sns.lineplot(all_iarmsd, 
-                x="Depth", y="Mean_X", 
+                x="Depth", y="Mean", 
                 errorbar=None,
                 hue="Method", style="Method",
                 palette="Paired", hue_order=["Nanopore 5mC", "Nanopore 5hmC", "TAB", "oxBS"],
