@@ -1,6 +1,7 @@
 import argparse
 import pandas as pd
 import gc
+import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import matplotlib as mpl
@@ -10,7 +11,6 @@ from matplotlib.gridspec import GridSpec
 from AnalysisTools.helpers import timer
 from AnalysisTools.common import *
 import string
-from compare_features import *
 from AnalysisTools import annotation_features
 from scipy import stats
 
@@ -30,8 +30,8 @@ def feature_stats(annotated_dataset: pd.DataFrame):
         mean_5hmC = pd.NamedAgg("percentMeth_5hmC", np.mean),
         median_5mC = pd.NamedAgg("percentMeth_5mC", np.median),
         median_5hmC = pd.NamedAgg("percentMeth_5hmC", np.median),
-        iqr_5mC = pd.NamedAgg("percentMeth_5mC", stats.iqr),
-        iqr_5hmC = pd.NamedAgg("percentMeth_5hmC", stats.iqr),
+        var_5mC = pd.NamedAgg("percentMeth_5mC", np.var),
+        var_5hmC = pd.NamedAgg("percentMeth_5hmC", np.var),
     )
     return feauture_stats.multiply(100)
 
@@ -70,9 +70,9 @@ def fig_main(figsize, fontsize, dryrun=True):
     [modbed.rename(columns={"N_mod" : "N_5hmC"}, inplace=True) for modbed in modbeds_list[1]]
     [modbed.rename(columns={"N_mod" : "N_5mC"}, inplace=True) for modbed in modbeds_list[2]]
     
-    feature_annotator = annotation_features.Annotator("/mnt/data1/doh28/analyses/mouse_hydroxymethylome_analysis/feature_references/feature_comparison/")
-    gene_annotator = annotation_features.Annotator("/mnt/data1/doh28/analyses/mouse_hydroxymethylome_analysis/feature_references/genic/")
-    cgi_annotator = annotation_features.Annotator("/mnt/data1/doh28/analyses/mouse_hydroxymethylome_analysis/feature_references/cgi/")
+    feature_annotator = annotation_features.Annotator("feature_references/feature_comparison/")
+    gene_annotator = annotation_features.Annotator("feature_references/genic/")
+    cgi_annotator = annotation_features.Annotator("feature_references/cgi/")
     
     nano_mb, *_ = modbeds_list
     annotators = [feature_annotator, gene_annotator, cgi_annotator]

@@ -3,11 +3,11 @@
 *.log
 *.sql
 *.sqlite
-*.bed 
 *.bedMethyl
 *.tsv
 *.png
 *.cov
+*.fa
 *.gtf
 *.bw
 .vscode/*
@@ -16,6 +16,10 @@
 data_tables/*
 *.json
 DNMTools_datasets/*
-feature_references/*
+feature_references/hg38
+feature_references/mm39.chrom.sizes
+feature_references/*.bed
+feature_references/*.tsv
+feature_references/*.bg
 test_data/*
 .vscode
