@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 from matplotlib import patches, lines
 import logomaker
+import warnings
 import argparse
 import numpy as np
 import gc
@@ -15,6 +16,18 @@ from AnalysisTools.helpers import timer
 import pandas as pd
 import pyranges as pr
 from scipy import stats
+
+def get_stars(stat) -> str:
+    if stat.pvalue < 0.0001:
+        star = "****"
+    elif stat.pvalue < 0.001:
+        star = "***"
+    elif stat.pvalue < 0.01:
+        star = "**"
+    elif stat.pvalue < 0.05:
+        star = "*"
+
+    return star
 
 class Control:
     def __init__(self, df: pd.DataFrame) -> None:
@@ -191,19 +204,40 @@ def gc_plots(ax: plt.Axes):
     dataset = dataset.assign(Proportion_of_calls = lambda r: r["readCount"] / dataset["readCount"].sum())
 
     ax.axhline(y=(dataset["N_5mC"].sum()+dataset["N_5hmC"].sum())/dataset["readCount"].sum(), 
-                    c="grey", ls=":", label="Genome mean FPR (Total)")    
+                  c="grey", ls=":")  
+    
     sns.lineplot(dataset_melt, 
                  x="GCBin", y="FPR", 
-                 hue="modType", palette="BuGn", lw=.8,
+                 hue="modType", palette="BuGn", lw=.8, 
+                 legend=False,
                  ax=ax)
+    
+    stat = {}
+    for modtype in dataset_melt["modType"].unique():
+        df = dataset_melt.loc[dataset_melt["modType"] == modtype]
+        result = stats.pearsonr(df["FPR"], df["GCBin"])
+        nlabel = modtype + f": r={round(result.statistic, 3)}{get_stars(result)}"
+        stat.update({modtype : nlabel})
+        print(modtype, f"n={df['readCount'].sum()}")
+
+    total_cor = stats.pearsonr(dataset["FPR"], dataset["GCBin"])
+    stat.update({"total" : f"Total (5mC+5hmC): r={round(total_cor.statistic, 3)}{get_stars(total_cor)}"})
     
     sns.lineplot(dataset, 
-                 x="GCBin", y="FPR", 
-                 label="Total (5mC+5hmC)", 
+                 x="GCBin", y="FPR", legend=False,
                  c="black", lw=.8,
-                 ax=ax)
-    print("Pearson r: FPR vs. GCBin", stats.pearsonr(dataset["FPR"], dataset["GCBin"]))
+                 ax=ax)  
     
+    print("Pearson r: FPR vs. GCBin", stats.pearsonr(dataset["FPR"], dataset["GCBin"]))
+    colors = sns.color_palette("BuGn", 2)
+    handles = [
+        lines.Line2D((), (), linestyle=":", color="grey", linewidth=.8),
+        lines.Line2D((), (), color=colors[0], linewidth=.8),
+        lines.Line2D((), (), color=colors[1], linewidth=.8),
+        lines.Line2D((), (), color="k", linewidth=.8),
+    ]
+    labels = ["Genomic mean FPR (Total)", stat["5mC"], stat["5hmC"], stat["total"]]
+    ax.legend(handles, labels, loc="center")
     sns.move_legend(ax, "upper left", frameon=False, title="False positive call")
 
     ax.set_xlim(5, 100)
@@ -292,14 +326,16 @@ def main(test_run=True):
     h_only = extract_dfs.query("call_code == 'h'")
     m_only, h_only = map(kmer_count, [m_only, h_only])
 
-    m_only_mat, h_only_mat = [logomaker.alignment_to_matrix(frame["query_kmer"], counts=frame["count"]) 
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", FutureWarning)
+        m_only_mat, h_only_mat = [logomaker.alignment_to_matrix(frame["query_kmer"], counts=frame["count"]) 
                               for frame in [m_only, h_only]]
+        
+        for mat, ax in zip([m_only_mat, h_only_mat], [logos_m_ax, logos_h_ax]):
+            mat = logomaker.transform_matrix(mat, normalize_values=True)
+            logomaker.Logo(mat, fade_probabilities=True, color_scheme="base_pairing", ax=ax)
 
-    for mat, ax in zip([m_only_mat, h_only_mat], [logos_m_ax, logos_h_ax]):
-        mat = logomaker.transform_matrix(mat, normalize_values=True)
-        logomaker.Logo(mat, fade_probabilities=True, color_scheme="base_pairing", ax=ax)
-
-        print("GC%:", mat["G"].mean() + mat["C"].mean())
+            print("GC%:", mat["G"].mean() + mat["C"].mean())
 
     del extract_dfs, m_only_mat, h_only_mat
     gc.collect()
