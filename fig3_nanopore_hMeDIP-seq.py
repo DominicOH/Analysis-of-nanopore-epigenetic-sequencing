@@ -134,19 +134,14 @@ def fig_main(dryrun=True, fontsize=5, threshold=10):
     # Plot proportion of C basecalls peak vs. Nanopore WGS # 
     print("Loading Nanopore WGS reference data...")
 
-    if dryrun:
-        nano_path = "data/dryruns/modbeds/nanopore/"
-        tab_path = "data/dryruns/modbeds/tab/"
-
-    else:
-        nano_path = "data/modbases/modbeds/nanopore/"
-        tab_path = "data/modbases/modbeds/tab/"
-        
+    nano_path = "data/modbases/modbeds/nanopore/"
+    tab_path = "data/modbases/modbeds/tab/"
+    
     nano_cols = ["readCount", "N_C", "N_mC", "N_hmC", "percentMeth_5hmC"]
     tab_cols = ["readCount", "N_mod", "percentMeth_mod"]
 
     with concurrent.futures.ThreadPoolExecutor(4) as fetch_executor:
-        nano_modbeds_fut, tab_modbeds_fut = [fetch_executor.submit(common.fetch_modbeds, path, sel_cols) for path, sel_cols in zip([nano_path, tab_path], [nano_cols, tab_cols])]
+        nano_modbeds_fut, tab_modbeds_fut = [fetch_executor.submit(common.fetch_modbeds, path, sel_cols, dryrun) for path, sel_cols in zip([nano_path, tab_path], [nano_cols, tab_cols])]
         nano_modbeds = [future for future in nano_modbeds_fut.result()]
         tab_modbeds = [future.rename(columns={"percentMeth_mod" : "percentMeth_5hmC",
                                               "N_mod" : "N_5hmC"}) for future in tab_modbeds_fut.result()]
@@ -206,15 +201,21 @@ def fig_main(dryrun=True, fontsize=5, threshold=10):
         print("T-Test:", mod, pg.ttest(genome["proportion"].to_numpy(), n_hmedip["proportion"].to_numpy(), paired=False))
 
     sns.barplot(callstats_bar_df.sort_values("Method"), 
-                x="mod",
-                hue="Method",
-                y="percentage",
-                palette="PuBuGn",
+                x="mod", y="percentage",
+                hue="Method", palette="PuBuGn",
                 width=.6,
                 order=["C", "5mC", "5hmC"], 
                 hue_order=["WGS", "hMeDIP"], 
                 errorbar=("sd", 1), err_kws={"lw" : 1}, capsize=.25,            
                 ax=ax3)
+    
+    sns.stripplot(callstats_bar_df.sort_values("Method"), 
+                  x="mod", y="percentage", 
+                  dodge=True, order=["C", "5mC", "5hmC"], 
+                  hue="Method", hue_order=["WGS", "hMeDIP"], color="k",
+                  legend=False, 
+                  size=3,
+                  ax=ax3)
 
     sns.move_legend(ax3, "lower center", ncols=2, title=None, frameon=False, bbox_to_anchor=(.5, 1))
 
@@ -295,13 +296,21 @@ def fig_main(dryrun=True, fontsize=5, threshold=10):
 
     feature_barplot.eval("percentage = proportion * 100", inplace=True)
     sns.barplot(feature_barplot.reset_index(),
-                x="feature_type", 
-                y="percentage",
+                x="feature_type", y="percentage",
                 errorbar=("sd", 1), err_kws={"lw" : 0.8}, capsize=.25,
                 order=["Intergenic", "Intron", "Exon", "Promoter"],
                 hue="Method", hue_order=["Genome", "Direct hMeDIP", "PCR hMeDIP"],
                 palette="BuPu",
                 ax=ax2)
+    
+    sns.stripplot(feature_barplot.reset_index(),
+                  x="feature_type", y="percentage",
+                  dodge=True,
+                  order=["Intergenic", "Intron", "Exon", "Promoter"],
+                  hue="Method", hue_order=["Genome", "Direct hMeDIP", "PCR hMeDIP"],
+                  legend=False, color="k",
+                  size=3,
+                  ax=ax2)
     
     feature_barplot_stats = feature_barplot.groupby(["Method", "feature_type"])
     for feature, hypothesis in zip(["Intergenic", "Intron", "Exon", "Promoter"], ["less", "greater", "greater", "greater"]):
