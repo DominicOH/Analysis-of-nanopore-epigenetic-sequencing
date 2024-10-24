@@ -4,6 +4,10 @@ import pyranges as pr
 import concurrent.futures
 import numpy as np
 
+"""
+Tools related to producing annotated datasets. 
+"""
+
 class Reference:
     """
     Objects used as genomic or feature references extracted from files. Input files should be in BED4, BED6, BED8, and BED12 format files are supported.

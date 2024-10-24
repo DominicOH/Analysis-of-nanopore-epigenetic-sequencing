@@ -126,17 +126,19 @@ class MeltDF(PatternFrame):
     def distance_to_summit(self, filter_distance=np.inf):
         df = self.replace_modnames().pattern_df
 
+        print("Performing K-nearest for CTCF summits")
         distances = (pr.PyRanges(df, int64=True)
-                     .k_nearest(ctcf_summits, ties="first", suffix="_Summit")
-                     .as_df())
+                    .k_nearest(ctcf_summits, ties="first", suffix="_Summit")
+                    .as_df())
         
-        distances = (distances.groupby(["Distance", "Pattern"], observed=True).agg({"Count" : sum})
-                     .reset_index())
+        distances = (distances.groupby(["Pattern", "Distance"], observed=True)
+                              .agg({"Count" : sum})
+                              .reset_index())
         
         distances["abs"] = abs(distances["Distance"])
         distances = distances.loc[distances["abs"] <= filter_distance]        
         
-        return distances
+        return distances.get(["Pattern", "Count", "Distance", "abs"])
     
 class DistDF:
     def __init__(self, df: pd.DataFrame):
