@@ -8,7 +8,7 @@ Public data used in this analysis pertains to the oxBS-seq and TAB-seq data prod
 
 ## How to use this repository
 
-This repository is intended to enable reproduction of figures and statistics used in the associated publication. Users are recommended to download the extracted modified base information from the NCBI GEO repository where they are archived as <GEO ID TBD>. Users will then need to replace filepaths used in these scripts to match their filesystem. Scripts are named according to the statistics, figure, or supplementary figure that they produce or are related to.
+This repository is intended to enable reproduction of figures and statistics used in the associated publication. Users are recommended to download the extracted modified base information from the NCBI GEO repository where they are archived as GSE279860. Users will then need to replace filepaths used in these scripts to match their filesystem. Scripts are named according to the statistics, figure, or supplementary figure that they produce or are related to.
 
 Some reference and data files, excluding large genomic references for which links are provided, in `feature_references` and `data` folders. Where this is not possible due to size, instructions are provided within scripts. 
 
