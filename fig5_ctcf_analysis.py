@@ -8,49 +8,19 @@ import argparse
 from AnalysisTools.helpers import timer
 import string
 import numpy as np
-from scipy.stats import contingency
 from scipy import stats
 import AnalysisTools.ctcf_site_tools as ctcf
+import gc
 import scikit_posthocs as sp
 import pingouin as pg
 
+def produce_violins(file_path, replicate):
+    modbed = ctcf.read_merge(file_path, test_run, replicate)
+    violin = modbed.site_summit_distances(min_depth, filter_distance)
+    return violin
+
 @timer
-def main(test_run=True, min_depth=1, upset_plot=False, filter_distance=500):
-
-    root_path = "data/duplex_data/"
-    files = ["cbm2/CBM_2_rep1.masked.bed", "cbm2/CBM_2_rep2.masked.bed",
-             "cbm3/CBM_3_rep1.sorted.bam.bed", "cbm3/CBM_3_rep2.sorted.bam.bed"]
-
-    file_paths = [root_path + file for file in files]
-
-    print("Loading data")
-    with concurrent.futures.ProcessPoolExecutor(len(file_paths)) as load_executor:
-        all_duplex_modbeds = [load_executor.submit(ctcf.read_merge, path, test_run, replicate+1) for replicate, path in enumerate(file_paths)]
-        all_duplex_modbeds = [modbed.result() for modbed in all_duplex_modbeds]
-
-    print("Loaded data. Calculating distances to CTCF summits")
-    with concurrent.futures.ThreadPoolExecutor(len(all_duplex_modbeds)) as violin_executor:
-        violin_futures = [violin_executor.submit(modbed.site_summit_distances, min_depth, filter_distance) for modbed in all_duplex_modbeds]
-        violin_concat = ctcf.DistDF(pd.concat([future.result() for future in violin_futures])
-                                    .groupby(["Pattern", "Distance", "abs"], observed=True)
-                                    .agg({"Count" : sum})
-                                    .reset_index())
-        
-        violin_reads = violin_concat.explode_reads().reset_index(drop=True)
-
-    patterns = ["C:C", "5mC:5mC", "5hmC:5hmC", "C:5mC", "C:5hmC", "5mC:5hmC"]
-    groups = [violin_reads['abs'][violin_reads['Pattern'] == pattern] for pattern in patterns]
-
-    print("Kruskal-Wallis test:", stats.kruskal(*groups))
-    dunn_result = sp.posthoc_dunn(violin_reads, val_col='abs', group_col='Pattern', p_adjust='holm')
-    print("Dunn post hoc analysis", dunn_result)
-
-    with concurrent.futures.ThreadPoolExecutor(len(all_duplex_modbeds)) as merge_executor:
-        merged_motif_patterns = merge_executor.map(lambda pf: pf.merge_motif_patterns(min_depth), all_duplex_modbeds)
-
-    with concurrent.futures.ThreadPoolExecutor(len(all_duplex_modbeds)) as merge_executor:
-        merged_chip_patterns = merge_executor.map(lambda pf: pf.merge_chip_patterns(min_depth), all_duplex_modbeds)
- 
+def main():
     fig = plt.figure(figsize=(89/25.4, 120/25.4), dpi=600, layout="constrained")
 
     sns.set_style("ticks")
@@ -62,8 +32,33 @@ def main(test_run=True, min_depth=1, upset_plot=False, filter_distance=500):
     ax2 = fig.add_subplot(gs[0, 1:])
     ax3 = fig.add_subplot(gs[1, :])
     ax4 = fig.add_subplot(gs[2:, :])
+    
+    root_path = "data/duplex_data/"
+    files = ["cbm2/CBM_2_rep1.masked.bed", "cbm2/CBM_2_rep2.masked.bed",
+             "cbm3/CBM_3_rep1.sorted.bam.bed", "cbm3/CBM_3_rep2.sorted.bam.bed"]
 
-    ax3.axhline(0, ls=":", c="grey")
+    file_paths = [root_path + file for file in files]
+
+    print("Loaded data. Calculating distances to CTCF summits")
+    with concurrent.futures.ProcessPoolExecutor(len(file_paths)) as violin_executor:
+        violin_futures = [violin_executor.submit(produce_violins, path, i+1) 
+                          for i, path in enumerate(file_paths)]
+        violin_all = pd.concat([future.result() for future in violin_futures], ignore_index=True)
+    gc.collect()    
+    distances = ctcf.DistDF(violin_all.groupby(["Pattern", "Distance", "abs"], observed=True)
+                                      .agg({"Count" : sum})
+                                      .reset_index())
+    
+    violin_reads = distances.explode_reads().reset_index(drop=True)
+    gc.collect()  
+
+    patterns = ["C:C", "5mC:5mC", "5hmC:5hmC", "C:5mC", "C:5hmC", "5mC:5hmC"]
+    groups = [violin_reads['abs'][violin_reads['Pattern'] == pattern] for pattern in patterns]
+
+    print("Kruskal-Wallis test:", stats.kruskal(*groups))
+    dunn_result = sp.posthoc_dunn(violin_reads, val_col='abs', group_col='Pattern', p_adjust='holm')
+    print("Dunn post hoc analysis", dunn_result)
+
     sns.violinplot(violin_reads, 
                    x="Pattern", y="Distance", 
                    color="#99d8c9",
@@ -84,6 +79,24 @@ def main(test_run=True, min_depth=1, upset_plot=False, filter_distance=500):
     
     counts = violin_reads.groupby("Pattern").size()
     labels = [pattern + f"\nn={counts[pattern]}" for pattern in patterns]
+    del violin_reads
+    gc.collect()
+
+    print("Loading data for barplots")
+    with concurrent.futures.ProcessPoolExecutor(len(file_paths)) as load_executor:
+        all_duplex_modbeds = [load_executor.submit(ctcf.read_merge, path, test_run, replicate+1) for replicate, path in enumerate(file_paths)]
+        all_duplex_modbeds = [modbed.result() for modbed in all_duplex_modbeds]
+
+    with concurrent.futures.ThreadPoolExecutor(len(all_duplex_modbeds)) as merge_executor:
+        merged_motif_patterns = merge_executor.map(lambda pf: pf.merge_motif_patterns(min_depth), all_duplex_modbeds)
+
+    with concurrent.futures.ThreadPoolExecutor(len(all_duplex_modbeds)) as merge_executor:
+        merged_chip_patterns = merge_executor.map(lambda pf: pf.merge_chip_patterns(min_depth), all_duplex_modbeds)
+
+    del all_duplex_modbeds
+    gc.collect()
+
+    ax3.axhline(0, ls=":", c="grey")
     ax3.set_xticks(patterns, labels)
     
     ax3.set_ylabel("Distance to summit (bp)")
@@ -96,6 +109,8 @@ def main(test_run=True, min_depth=1, upset_plot=False, filter_distance=500):
     with concurrent.futures.ThreadPoolExecutor(4) as pie_executor:
         chip_patterns = pie_executor.map(lambda pf: pf.piechart_data(), merged_chip_patterns)
         chip_basecalls = pd.concat([ctcf.eval_basecall_proportions(pie.assign(Replicate = i)) for i, pie in enumerate(chip_patterns)])
+
+    gc.collect()
         
     root_path = "data/duplex_data/patterns/"
     files = ["CBM_2_rep1.masked.bed.duplex_patterns.tsv", "CBM_3_rep1.sorted.bam.bed.duplex_patterns.tsv",
@@ -128,6 +143,15 @@ def main(test_run=True, min_depth=1, upset_plot=False, filter_distance=500):
                 order=["C:C", "5mC:5mC"],
                 hue_order=["Genome average", "CTCF motif", "ChIP summit"],
                 ax=ax1)
+    
+    sns.stripplot(motif_vs_chip,
+                  x="Pattern", y="Proportion", 
+                  hue="Type", 
+                  color="k", size=3,
+                  legend=False, dodge=True, alpha=.66,
+                  order=["C:C", "5mC:5mC"],
+                  hue_order=["Genome average", "CTCF motif", "ChIP summit"],
+                  ax=ax1)
 
     sns.move_legend(ax1, "upper center", frameon=False, title=None, ncols=3, bbox_to_anchor=(2, 1.2))
     ax1.get_legend().set_in_layout(False)
@@ -145,11 +169,18 @@ def main(test_run=True, min_depth=1, upset_plot=False, filter_distance=500):
             hue_order=["Genome average", "CTCF motif", "ChIP summit"],
             ax=ax2)
     
+    sns.stripplot(motif_vs_chip,
+                  x="Pattern", y="Proportion", 
+                  color="k", size=3, hue="Type",
+                  dodge=True, legend=False, alpha=.66,
+                  order=["5hmC:5hmC", "C:5mC", "C:5hmC", "5mC:5hmC"],
+                  hue_order=["Genome average", "CTCF motif", "ChIP summit"],
+                  ax=ax2)
+    
     ax2.set_ylabel(None)
 
     for ax in [ax1, ax2]:
         ax.set_xlabel(None) # type: ignore
-        
     
     ax4.tick_params("both", bottom=False, labelbottom=False, left=False, labelleft=False)
 
@@ -196,13 +227,8 @@ if __name__=="__main__":
                         help="Whether a test output is produced.") 
     parser.add_argument("--min_depth", 
                         dest="min_depth", 
-                        default=1,
+                        default=5,
                         required=False,
-                        help="Whether to filter the dataset by depth at CpG.")
-    parser.add_argument("--upset_plot", 
-                        dest="upset_plot", 
-                        action="store_true",
-                        default=False,
                         help="Whether to filter the dataset by depth at CpG.")
     parser.add_argument("--filter_distance", 
                         dest="filter_distance",
@@ -211,12 +237,7 @@ if __name__=="__main__":
                         help="Whether to filter distance CpG dyads when comparing distance to summit.")
 
 
+    global test_run, min_depth, filter_distance
     args = parser.parse_args()
-
-    if args.test_run:
-        test_run = True
-    else: 
-        test_run = False
-
-    args = parser.parse_args()
-    main(test_run, args.min_depth, args.upset_plot, args.filter_distance)    
+    test_run, min_depth, filter_distance = args.test_run, args.min_depth, args.filter_distance
+    main()    
