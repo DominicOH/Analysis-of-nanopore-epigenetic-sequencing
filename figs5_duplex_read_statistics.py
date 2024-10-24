@@ -38,11 +38,11 @@ def main():
 
     bar_df["Proportion"] = bar_df["Read count"] / bar_df.groupby("Bam")["Read count"].transform(sum)
     bar_df = bar_df.replace(["CBM_2_rep1", "CBM_2_rep2", "CBM_3_rep1", "CBM_3_rep2", "zymo_wga_methylated_rep1", "zymo_wga_methylated_rep2", "zymo_wga_unmodified_rep1", "zymo_wga_unmodified_rep2", "Orphan simplex"],
-                            ["CBM2R1", "CBM2R2", "CBM3R1", "CBM3R2", "ZM1", "ZM2", "ZU1", "ZU2", "Simplex only"])
+                            ["CBM2_1", "CBM2_2", "CBM3_1", "CBM3_2", "ZM1", "ZM2", "ZU1", "ZU2", "Simplex only"])
 
     root_path = "data/duplex_data/patterns/"
     files = ["CBM_2_rep1.masked.bed.duplex_patterns.tsv", "CBM_3_rep1.sorted.bam.bed.duplex_patterns.tsv",
-            "CBM_2_rep2.masked.bed.duplex_patterns.tsv", "CBM_3_rep2.sorted.bam.bed.duplex_patterns.tsv"]
+             "CBM_2_rep2.masked.bed.duplex_patterns.tsv", "CBM_3_rep2.sorted.bam.bed.duplex_patterns.tsv"]
 
     file_paths = [root_path + file for file in files]
 
