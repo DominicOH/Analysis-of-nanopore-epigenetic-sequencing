@@ -33,7 +33,16 @@ def feature_stats(annotated_dataset: pd.DataFrame):
         var_5mC = pd.NamedAgg("percentMeth_5mC", np.var),
         var_5hmC = pd.NamedAgg("percentMeth_5hmC", np.var),
     )
-    return feauture_stats.multiply(100)
+    return feauture_stats.multiply({
+        "median_5mC_z" : 1,
+        "median_5hmC_z" : 1,
+        "mean_5mC" : 100, 
+        "mean_5hmC" : 100,
+        "median_5mC" : 100,
+        "median_5hmC" : 100,
+        "var_5mC" : 100,
+        "var_5hmC" : 100
+    })
 
 @timer
 def fig_main(figsize, fontsize, dryrun=True):
@@ -77,6 +86,8 @@ def fig_main(figsize, fontsize, dryrun=True):
     nano_mb, *_ = modbeds_list
     annotators = [feature_annotator, gene_annotator, cgi_annotator]
 
+    print("Annotating")
+
     def annotate_wrapper(annotator: annotation_features.Annotator):
         with concurrent.futures.ThreadPoolExecutor(4) as executor:
             annotated_all = executor.map(annotator.annotate, nano_mb)
@@ -116,11 +127,14 @@ def fig_main(figsize, fontsize, dryrun=True):
                                                    categories=tickorder, 
                                                    ordered=True)
     ax4.axhline(0, c="grey", lw=.8, ls=":")
+
+    print("Writing violin plot of annotated positions")
     sns.violinplot(annotated_all, 
                    x="feature_type", y="zscore", 
                    cut=2, linewidth=.5, density_norm="width",
                    hue="Mod", palette="GnBu", 
                    ax=ax4)    
+    gc.collect()
     
     sns.move_legend(ax4, "lower left", title=None, bbox_to_anchor=(.4, 1), ncol=2, frameon=False)
     ax4.axvline(4.5, c="k", lw=.8)
@@ -128,7 +142,6 @@ def fig_main(figsize, fontsize, dryrun=True):
     
     ax4.set_ylabel("Site modification (%) Z-Score")
     ax4.set_xlabel(None)
-    
     ax4.set_ybound(-3, 3)
 
     with concurrent.futures.ProcessPoolExecutor(3) as merge_executor:
@@ -138,8 +151,13 @@ def fig_main(figsize, fontsize, dryrun=True):
                                                      for future, method in zip(merge_futures, 
                                                                                ["Nanopore mean", "TAB mean", "oxBS mean"])]
 
+    if dryrun:
+        n=100000
+    else: 
+        n=1000000
+
     dfs = [nanopore_average, ox_average, nanopore_average, tab_average]
-    dfs = [df.sample(frac=.1, random_state=42) for df in dfs]
+    dfs = [df.sample(n, random_state=42) for df in dfs]
 
     xs = ["percentMeth_5mC", "percentMeth_5mC", "percentMeth_5hmC", "percentMeth_5hmC"]
     cs = [sns.color_palette("Greens_r", 4)[0], sns.color_palette("Greens_r", 4)[0], sns.color_palette("Blues_r", 4)[0], sns.color_palette("Blues_r", 4)[0]]
@@ -185,7 +203,7 @@ def fig_main(figsize, fontsize, dryrun=True):
         nano_oxbs, nano_tab = [future.result() for future in dev_plot_futures]
 
     gc.collect()
-    
+    [print("Sites compared: ", len(df)) for df in [nano_oxbs, nano_tab]]
     ax3.axvline(0, ls=":", c="grey", lw=0.8)
     
     sns.histplot(pd.concat([nano_oxbs, nano_tab]),
