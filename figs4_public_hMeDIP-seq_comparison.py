@@ -26,13 +26,17 @@ def tile_wgs(df, tile_size=500):
 
 def remove_low_count_tiles(tiled_df, threshold=5):
     tiled_df = tiled_df.loc[tiled_df.eval("CpG_count >= @threshold")]
-    return tiled_df.drop(columns="CpG_count")
+    return tiled_df
 
 def calculate_zscore(grouped_df):
     grouped_df = grouped_df.eval("tile_5hmC = (N_5hmC/readCount)")
+    grouped_df = grouped_df.eval("mod_density_100bp = (N_5hmC/(readCount * 5))")
+    print(f"Average 5hmCpG density per 100bp: {grouped_df['mod_density_100bp'].mean()}")
     grouped_df["asin"] = np.arcsin(grouped_df["tile_5hmC"])
     grouped_df["zscore"] = stats.zscore(grouped_df["asin"])
 
+    enriched_density = grouped_df.loc[grouped_df["zscore"] > 0, ("mod_density_100bp")].mean()
+    print(f"Average 5hmCpG density per 100bp in enriched Z>0 regions: {enriched_density}")
     return grouped_df.drop(columns=["N_5hmC", "readCount"])
 
 def read_narrowPeak(path):
@@ -54,7 +58,7 @@ def load_hmedip(dirpath):
 @helpers.timer
 def fig_main(dryrun=True):
 
-    blacklist = pr.read_bed("data/hmedip/blacklist/mm39-blacklist.v2_adj.bed")
+    blacklist = pr.read_bed("/mnt/data1/doh28/data/reference_genomes/mm39/mm39-blacklist.v2_sorted.bed")
     belongs_on_blacklist = pr.PyRanges(
         pd.DataFrame({"Chromosome" : ["chr13"], 
                       "Start" : [99221000],
@@ -63,22 +67,16 @@ def fig_main(dryrun=True):
     
     public_hmedip_dirpath = "/mnt/data1/doh28/data/public/PRJNA134133_hMeDIP/ucsc_converted/"
     public_hmedip = pd.concat([table.assign(Replicate = i) for i, table in enumerate(load_hmedip(public_hmedip_dirpath))])
+
+    print("Total length of public hMeDIP peaks: ", public_hmedip.apply(lambda r: r["End"] - r["Start"], axis=1).sum())
     public_hmedip_pr = (pr.PyRanges(public_hmedip).intersect(blacklist, invert=True)
                         .intersect(belongs_on_blacklist, invert=True))
-
-    if dryrun:
-        nano_path = "data/dryruns/modbeds/nanopore/"
-        tab_path = "data/dryruns/modbeds/tab/"
-
-    else:
-        nano_path = "data/modbases/modbeds/nanopore/"
-        tab_path = "data/modbases/modbeds/tab/"
         
-    nano_cols = ["readCount", "N_C", "N_mC", "N_hmC", "percentMeth_5hmC"]
-    tab_cols = ["readCount", "N_mod", "percentMeth_mod"]
+    usecols = [["readCount", "N_C", "N_mC", "N_hmC", "percentMeth_5hmC"], ["readCount", "N_mod", "percentMeth_mod"]]
+    paths =  ["data/modbases/modbeds/nanopore/", "data/modbases/modbeds/tab/"]
 
     with concurrent.futures.ThreadPoolExecutor(4) as fetch_executor:
-        nano_modbeds_fut, tab_modbeds_fut = [fetch_executor.submit(common.fetch_modbeds, path, sel_cols) for path, sel_cols in zip([nano_path, tab_path], [nano_cols, tab_cols])]
+        nano_modbeds_fut, tab_modbeds_fut = [fetch_executor.submit(common.fetch_modbeds, path, sel_cols, dryrun) for path, sel_cols in zip(paths, usecols)]
         nano_modbeds = [future for future in nano_modbeds_fut.result()]
         tab_modbeds = [future.rename(columns={"percentMeth_mod" : "percentMeth_5hmC",
                                                 "N_mod" : "N_5hmC"}) for future in tab_modbeds_fut.result()]
@@ -111,11 +109,9 @@ def fig_main(dryrun=True):
                     .query("Overlap >= (Peak_length / 2)")) # At least half the peak must sit in the region)
 
     jg = sns.JointGrid(height=(120/25.4), xlim=(-3, 7), ylim=(-3, 7))
-    # jg.figure.set_size_inches(180/25.4, 120/25.4)
     jg.figure.set_constrained_layout(True)
     
-    sns.set_style("ticks")
-
+    sns.set_style("whitegrid")
     mpl.rc('font', size=5)
 
     print("Plotting")
@@ -184,8 +180,16 @@ def fig_main(dryrun=True):
     print("Spearman (peaks vs. Nanopore):", stats.spearmanr(peak_overlay["zscore_Nanopore"], 
                                                             peak_overlay["fold_enrichment"]), 
                                                             "n=", len(peak_overlay))
+    
+    print("What proportion of enriched regions in (Nanopore) WGS are detected as hMeDIP peaks?")
+    l1 = pr.PyRanges(kde_background.query("zscore_Nanopore > 0")).intersect(public_hmedip_pr, how="first", invert=True) # regions that are enriched AND NOT intersect peaks
+    l2 = len(kde_background.query("zscore_Nanopore > 0")) # regions that are enriched
+    print(len(l1)/l2)
+    l1_bp_len = l1.as_df().apply(lambda r: r["End"] - r["Start"], axis=1).sum()
+    print(f"Equivalent to {l1_bp_len} bp")
 
     if dryrun:
+
         jg.savefig("plots/tests/pcr_hmedip_comparison.png", dpi=600)
     
     else: 
