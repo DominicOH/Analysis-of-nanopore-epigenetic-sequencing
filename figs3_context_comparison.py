@@ -162,8 +162,10 @@ def fig_main(dryrun, fontsize=5):
             star = "**"
         elif stat.pvalue < 0.05:
             star = "*"
+        else: 
+            star = ""
         
-        ax.annotate(f"$\\rho$={round(stat.statistic, 3)}$^{{{star}}}$", 
+        ax.annotate(f"$\\rho$={round(stat.statistic, 3)}{star}", 
                     xy=(-2, 3))
 
     if dryrun:
