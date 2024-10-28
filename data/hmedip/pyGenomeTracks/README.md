@@ -1,5 +1,5 @@
 # Introduction
-This section of the repository refers to how to reproduce the pyGenomeTracks image used in this figure. 
+This section of the repository refers to how to reproduce the pyGenomeTracks image used in Figure 3a. 
 
 # Data availability
 
