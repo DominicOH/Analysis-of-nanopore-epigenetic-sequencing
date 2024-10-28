@@ -3,13 +3,13 @@ from sklearn import metrics
 from sklearn.utils import resample
 import matplotlib.pyplot as plt
 import matplotlib as mpl
-from matplotlib import patches, lines
+from matplotlib import lines
 import logomaker
 import warnings
 import argparse
 import numpy as np
 import gc
-from AnalysisTools.common import fetch_controls
+from AnalysisTools import common
 import concurrent.futures
 from string import ascii_lowercase
 from AnalysisTools.helpers import timer
@@ -55,9 +55,10 @@ class Control:
                     .sum()
                     .loc[target_repeat_types]
                     .assign(FPR_5mC = lambda r: r["N_5mC"]/r["readCount"], 
-                            FPR_5hmC = lambda r: r["N_5hmC"]/r["readCount"])
+                            FPR_5hmC = lambda r: r["N_5hmC"]/r["readCount"],
+                            Total = lambda r: (r["N_5mC"]+ r["N_5hmC"])/r["readCount"])
                             .reset_index()
-                            .melt(id_vars=["Score", "readCount"], value_vars=["FPR_5mC", "FPR_5hmC"]))
+                            .melt(id_vars=["Score", "readCount"], value_vars=["FPR_5mC", "FPR_5hmC", "Total"]))
         else:
             grouped_by_feature = (annotated_error
                     .groupby("Score", as_index=True)[["readCount", mod]]
@@ -66,7 +67,7 @@ class Control:
                     .assign(FPR = lambda r: r[mod]/r["readCount"])
                             .reset_index())
             
-        grouped_by_feature = (grouped_by_feature.replace(["DNA", "Simple_repeat", "Low_complexity"], ["Repeat", "Simple repeat", "Low complexity"]))
+        grouped_by_feature = (grouped_by_feature.replace(["DNA", "Simple_repeat", "Low_complexity"], ["Repeat", "SR", "LC"]))
         return grouped_by_feature
 
 def concat_controls(controls: list[Control]):
@@ -102,11 +103,12 @@ def precision_recall(modified_control: pd.DataFrame,
     
     print("Plot statistics:")
     print("AUC:", round(metrics.roc_auc_score(gt_r, pred_r), 3))
-    print("F1:", metrics.f1_score(gt_r, pred_r))
+    f1_stat = metrics.f1_score(gt_r, pred_r)
     print("Precision:", metrics.precision_score(gt_r, pred_r))
     print("Recall:", metrics.recall_score(gt_r, pred_r))
     
-    return metrics.PrecisionRecallDisplay.from_predictions(gt_r, pred_r, ax=ax)
+    return metrics.PrecisionRecallDisplay.from_predictions(gt_r, pred_r, ax=ax, label=f"5mC: F1 = {round(f1_stat, 3)}", 
+                                                           c=sns.color_palette("GnBu", 3)[1])
 
 def make_confusion_matrix(modified_control: pd.DataFrame, 
                          unmodified_control: pd.DataFrame, 
@@ -141,7 +143,7 @@ def make_confusion_matrix(modified_control: pd.DataFrame,
     return sns.heatmap(mat,
                 xticklabels=["C", "5mC", "5hmC"], 
                 yticklabels=["5mC", "C"], 
-                cmap="Blues",
+                cmap="Greens",
                 annot=True, linewidths=1, 
                 vmax=.1, vmin=0, cbar=False,
                 square=False,
@@ -157,16 +159,25 @@ def repeat_barplot(controls: list[Control], ax=plt.Axes, mod=None):
         with concurrent.futures.ProcessPoolExecutor(2) as ppe:
             futures = [ppe.submit(control.calculate_feature_fpr, feature_ref) for control in controls]
             results = pd.concat([future.result().assign(Replicate = i) for i, future in enumerate(futures)])
-
+        
         results = results.replace(["FPR_5mC", "FPR_5hmC"], ["5mC", "5hmC"])
 
         sns.barplot(results, 
                     x="Score", y="value", 
-                    hue="variable",
+                    hue="variable", hue_order=["Total", "5mC", "5hmC"],
                     err_kws={"lw" : .6}, errorbar="sd", 
-                    width=.6, capsize=.3,
-                    palette="BuGn",
+                    width=.8, capsize=.3,
+                    palette="GnBu",
                     ax=ax)
+        
+        sns.stripplot(results, 
+                      x="Score", y="value", 
+                      hue="variable", palette="dark:k", c="k",
+                      hue_order=["Total", "5mC", "5hmC"],
+                      alpha=.6, size=3,
+                      legend=False,
+                      dodge=True, jitter=.3,
+                      ax=ax)
 
     else: 
         with concurrent.futures.ProcessPoolExecutor(2) as ppe:
@@ -177,8 +188,15 @@ def repeat_barplot(controls: list[Control], ax=plt.Axes, mod=None):
                     x="Score", y="FPR", 
                     err_kws={"lw" : .6}, errorbar="sd", 
                     width=.3, capsize=.15, legend=True,
-                    color=sns.color_palette("BuGn", 2)[1],
+                    color=sns.color_palette("GnBu", 3)[2],
                     ax=ax)
+        
+        sns.stripplot(results, 
+                      x="Score", y="FPR", 
+                      c="k", dodge=True, alpha=.6, size=3,
+                      legend=False,
+                      ax=ax)
+
         
     ax.set_xlabel(None)
     ax.set_ylabel("FPR")
@@ -188,10 +206,13 @@ def kmer_count(df: pd.DataFrame):
     return df.groupby("query_kmer", as_index=False).agg(count=pd.NamedAgg(column="query_kmer", aggfunc="count"))
 
 def gc_plots(ax: plt.Axes):
-    binned_gc_paths = ["zymo_wga_unmodified_rep1.sorted.bedMethyl.percentGC.bed.gcBinned", 
-                       "zymo_wga_unmodified_rep2.sorted.bedMethyl.percentGC.bed.gcBinned"]
-    base_path = "data/gc/controls/"
-    paths = [base_path + path for path in binned_gc_paths]
+    """
+    Data input files (provided) are produced using AnalysisTools/bin_gc.py
+    """
+    paths = ["data/gc/controls/" + path 
+                       for path in ["zymo_wga_unmodified_rep1.sorted.bedMethyl.percentGC.bed.gcBinned", 
+                                    "zymo_wga_unmodified_rep2.sorted.bedMethyl.percentGC.bed.gcBinned"]]
+    
     names = ["GCBin", "readCount", "N_5mC", "N_5hmC", "FPR"]
 
     dataset = pd.concat([pd.read_table(path, names=names).assign(Replicate = i) for i, path in enumerate(paths)])
@@ -208,7 +229,7 @@ def gc_plots(ax: plt.Axes):
     
     sns.lineplot(dataset_melt, 
                  x="GCBin", y="FPR", 
-                 hue="modType", palette="BuGn", lw=.8, 
+                 hue="modType", palette=sns.color_palette("GnBu", 3)[1:], lw=1, 
                  legend=False,
                  ax=ax)
     
@@ -225,20 +246,20 @@ def gc_plots(ax: plt.Axes):
     
     sns.lineplot(dataset, 
                  x="GCBin", y="FPR", legend=False,
-                 c="black", lw=.8,
+                 c=sns.color_palette("GnBu", 3)[0], lw=1,
                  ax=ax)  
     
     print("Pearson r: FPR vs. GCBin", stats.pearsonr(dataset["FPR"], dataset["GCBin"]))
-    colors = sns.color_palette("BuGn", 2)
+    colors = sns.color_palette("GnBu", 2)
     handles = [
-        lines.Line2D((), (), linestyle=":", color="grey", linewidth=.8),
-        lines.Line2D((), (), color=colors[0], linewidth=.8),
-        lines.Line2D((), (), color=colors[1], linewidth=.8),
-        lines.Line2D((), (), color="k", linewidth=.8),
+        lines.Line2D((), (), linestyle=":", color="grey", linewidth=1),
+        lines.Line2D((), (), color=sns.color_palette("GnBu", 3)[0], linewidth=1),
+        lines.Line2D((), (), color=colors[0], linewidth=1),
+        lines.Line2D((), (), color=colors[1], linewidth=1),
     ]
-    labels = ["Genomic mean FPR (Total)", stat["5mC"], stat["5hmC"], stat["total"]]
+    labels = ["Genomic mean FPR (Total)",  stat["total"], stat["5mC"], stat["5hmC"]]
     ax.legend(handles, labels, loc="center")
-    sns.move_legend(ax, "upper left", frameon=False, title="False positive call")
+    sns.move_legend(ax, "upper left", title="False positive call")
 
     ax.set_xlim(5, 100)
     ax.set_ylim(0)
@@ -247,12 +268,14 @@ def gc_plots(ax: plt.Axes):
     ax.set_xlabel("GC in 100bp")    
 
     return 
-    
+        
 @timer
-def main(test_run=True):
+def main(pileups, extracts):
     print("Fetching data")
-    controls = fetch_controls(["readCount", "N_C", "N_mC", "N_hmC"], test_run=test_run)
-    controls = [control for control in map(lambda df: Control(df), controls)]
+    controls = common.fetch_modbeds(pileups, 
+                                    ["readCount", "N_C", "N_mC", "N_hmC"], 
+                                    test_run=test_run)
+    controls = list(map(lambda df: Control(df), controls))
     print("Data fetched")
 
     fig = plt.figure(figsize=(180/25.4, 120/25.4), dpi=600, layout="constrained")
@@ -274,8 +297,6 @@ def main(test_run=True):
     del controls
     
     # logomaker presentation of sequence motifs # 
-    extract_paths = ["/mnt/data1/doh28/data/nanopore_hmc_validation/nanopore_wgs/zymo_unmodified/extract/" + name 
-                     for name in ["zymo_wga_unmodified_rep1.sorted.extract.tsv", "zymo_wga_unmodified_rep2.sorted.extract.tsv"]]
     names = ["readID", "forward_read_position", "ref_position", "chrom", "mod_strand", "ref_strand", "ref_mod_strand", "fw_soft_clipped_start", "fw_soft_clipped_end", "read_length",
              "call_prob", "call_code", "base_qual", "ref_kmer", "query_kmer", "canonical_base", "modified_primary_base", "fail", "inferred", "within_alignment", "flag"]
     
@@ -291,36 +312,39 @@ def main(test_run=True):
     unmod_hmc_fpr = u_merge["N_5hmC"].sum()/u_merge["readCount"].sum()
     mod_hmc_fpr = m_merge["N_5hmC"].sum()/m_merge["readCount"].sum()
         
-    repeat_unmodified_ax.axhline(unmod_fpr, c="grey", ls=":", lw=.8, label="Mean FPR (Total)")
+    repeat_unmodified_ax.axhline(unmod_fpr, c="grey", ls=":", lw=.8, label="Genomic mean (5mC + 5hmC)")
 
     print("Writing repeat-context specific FPR barplots")
     repeat_barplot(neg_ctrls, repeat_unmodified_ax)
      
     sns.move_legend(repeat_unmodified_ax, "lower left", frameon=False, 
-                    ncols=3, title=None, bbox_to_anchor=(.25, 1))
+                    ncols=4, title=None, bbox_to_anchor=(.1, 1))
     
     repeat_barplot(pos_ctrls, repeat_modified_ax, "N_5hmC")
 
-    patch_legend = [patches.Patch(color=sns.color_palette("BuGn", 2)[1], label="5hmC"),
-                    lines.Line2D([0], [0], c="grey", ls=":", lw=.8, label="Mean FPR (5hmC)")]
+    # patch_legend = [patches.Patch(color=sns.color_palette("GnBu", 3)[2], label="5hmC"),
+    #                 lines.Line2D([0], [0], c="grey", ls=":", lw=.8, label="Genomic mean FPR")]
 
-    repeat_modified_ax.legend(handles=patch_legend, loc="center")
+    # repeat_modified_ax.legend(handles=patch_legend, loc="center")
     repeat_modified_ax.axhline(mod_hmc_fpr, c="grey", ls=":", lw=.8)
 
-    sns.move_legend(repeat_modified_ax, "lower left", frameon=False, 
-                    ncols=2, title=None, reverse=True, bbox_to_anchor=(.25, 1))
+    # sns.move_legend(repeat_modified_ax, "lower left", frameon=False, 
+    #                 ncols=2, title=None, reverse=True, bbox_to_anchor=(.15, 1))
 
-    repeat_unmodified_ax.set_title("Modification-negative control", y=1.25)
-    repeat_modified_ax.set_title("5mC-positive control", y=1.25)
+    repeat_unmodified_ax.set_title("Modification-negative control", y=1.2)
+    repeat_modified_ax.set_title("5mC-positive control")
 
-    [ax.axvline(6.5, c="k", lw=.8) for ax in [repeat_unmodified_ax, repeat_modified_ax]]
+    # repeat_unmodified_ax.tick_params("x", bottom=False, labelbottom=False)
+    for ax in [repeat_unmodified_ax, repeat_modified_ax]:
+        ax.axvline(6.5, c="k", lw=.8)
+    repeat_unmodified_ax.sharey(repeat_modified_ax)
 
     print("Writing GC plot")
     gc_plots(gc_bar_plot_ax)
 
     print("Making motif logo")
     extract_dfs = pd.concat([pd.read_table(path, names=names, usecols=["readID", "call_code", "query_kmer"], nrows=nrows) 
-                             for path in extract_paths])
+                             for path in extracts])
     
     m_only = extract_dfs.query("call_code == 'm'")
     h_only = extract_dfs.query("call_code == 'h'")
@@ -352,7 +376,6 @@ def main(test_run=True):
     print(f"Total 5hmC FPR: \n5mC-positive standard {mod_hmc_fpr}\nModification negative standard: {unmod_hmc_fpr}")   
     print("Defining Precision-Recall and confusion matrix")
     precision_recall(m_merge, u_merge, precision_recall_ax)
-    precision_recall_ax.get_legend().remove()
     make_confusion_matrix(m_merge, u_merge, confusion_matrix_ax)
 
     print("Finished plotting. Calculating stats using full datasets")
@@ -365,7 +388,7 @@ def main(test_run=True):
     confusion_matrix_ax.set_ylabel("True label")
     confusion_matrix_ax.set_xlabel("Predicted label")
     
-    for i, ax in enumerate(fig.get_axes()):
+    for i, ax in enumerate([precision_recall_ax, gc_bar_plot_ax, logos_m_ax, logos_h_ax, repeat_unmodified_ax, confusion_matrix_ax]):
         ax.set_title(ascii_lowercase[i], loc="left", fontweight="bold")
 
     sns.despine()
@@ -378,13 +401,30 @@ def main(test_run=True):
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser(
-                        prog = "cpg_methylation_compare",
-                        description = "Compares the coverage of the different datasets.")
+        prog = "fig1_methylation_standards",
+        description = 
+        "Produce analyses of Nanopore modification detection using data from the Human Methylated & Non-Methylated (WGA) DNA Set (Zymo Research, D5013).\n\
+        \n\
+        Required data inputs: \n\
+            1. Output from `modkit pileup --cpg <modbam>` (-p)\n\
+            2. Output from `modkit extract --cpg <modbam>` (-e)\n")
+    parser.add_argument("-p", "--modkit-pileup",
+        action="store", 
+        dest="pileups",
+        nargs="+",
+        required=True,
+        help="Whitespace-separated list of outputs from modkit pileup --cpg.")
+    parser.add_argument("-e ", "--modkit-extract", 
+        action="store", 
+        dest="extracts", 
+        nargs="+",
+        required=True,
+        help="Output from modkit extract --cpg.")
     parser.add_argument("-t ", "--test-run", 
-                        action="store_true", 
-                        dest="test_run", 
-                        required=False,
-                        help="Produce a test output using the first 100k base positions from the pileup data.") 
+        action="store_true", 
+        dest="test_run", 
+        required=False,
+        help="Produce a test output using the first 100k base positions from the pileup data.") 
 
     args = parser.parse_args()
 
@@ -394,4 +434,4 @@ if __name__=="__main__":
     else: 
         test_run = False
 
-    main(test_run)    
+    main(args.pileups, args.extracts)    
