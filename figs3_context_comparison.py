@@ -63,21 +63,17 @@ def calculate_stats(df):
     return out
 
 @timer
-def fig_main(dryrun, fontsize=5):
+def fig_main(fontsize=5):
     # Loading data # 
-    if dryrun:
-        nano_path = "data/dryruns/modbeds/nanopore/"
-        tab_path = "data/dryruns/modbeds/tab/"
 
-    else:
-        nano_path = "data/modbases/modbeds/nanopore/"
-        tab_path = "data/modbases/modbeds/tab/"
+    nano_path = "data/modbases/modbeds/nanopore_base5/"
+    tab_path = "data/modbases/modbeds/tab/"
 
     paths = [nano_path, tab_path]
     cols = [["readCount", "N_hmC"], ["readCount", "N_mod"]]
 
     with concurrent.futures.ProcessPoolExecutor(3) as fetch_executor:
-        modbeds_list = [fetch_executor.submit(fetch_modbeds, path, cols) for path, cols in zip(paths, cols)]
+        modbeds_list = [fetch_executor.submit(fetch_modbeds, path, cols, test_run) for path, cols in zip(paths, cols)]
         modbeds_list = [future.result() for future in modbeds_list]
 
     [modbed.rename(columns={"N_mod" : "N_5hmC"}, inplace=True) for modbed in modbeds_list[1]]
@@ -168,7 +164,7 @@ def fig_main(dryrun, fontsize=5):
         ax.annotate(f"$\\rho$={round(stat.statistic, 3)}{star}", 
                     xy=(-2, 3))
 
-    if dryrun:
+    if test_run:
         fg.savefig("plots/tests/compare_features.png", dpi=600) 
     else:
         fg.savefig("plots/compare_features.png", dpi=600) 
@@ -182,9 +178,9 @@ if __name__=="__main__":
     parser = argparse.ArgumentParser(
                         prog = "compare_features",
                         description = "Compares 5hmC in features of the different datasets.")
-    parser.add_argument("-d ", "--dryrun", 
+    parser.add_argument("-t", "--test_run", 
                         action="store_true", 
-                        dest="dryrun", 
+                        dest="test_run", 
                         default=False,
                         required=False,
                         help="Whether a test output is produced.") 
@@ -193,7 +189,10 @@ if __name__=="__main__":
                         default=5,
                         required=False,
                         help="Size of figure font.") 
-
+    
     args = parser.parse_args()
 
-    fig_main(args.dryrun, args.fontsize)
+    global test_run
+    test_run = args.test_run
+
+    fig_main(args.fontsize)
