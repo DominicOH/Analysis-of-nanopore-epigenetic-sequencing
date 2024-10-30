@@ -11,7 +11,6 @@ import seaborn as sns
 import matplotlib as mpl
 from matplotlib.gridspec import GridSpec
 from scipy import stats
-from statsmodels.stats import proportion
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 import pingouin as pg
 
@@ -134,7 +133,7 @@ def fig_main(dryrun=True, fontsize=5, threshold=10):
     # Plot proportion of C basecalls peak vs. Nanopore WGS # 
     print("Loading Nanopore WGS reference data...")
 
-    nano_path = "data/modbases/modbeds/nanopore/"
+    nano_path = "data/modbases/modbeds/nanopore_base5/"
     tab_path = "data/modbases/modbeds/tab/"
     
     nano_cols = ["readCount", "N_C", "N_mC", "N_hmC", "percentMeth_5hmC"]
@@ -175,30 +174,13 @@ def fig_main(dryrun=True, fontsize=5, threshold=10):
     wgs_mods = wgs.groupby("mod").sum().reset_index().replace(["N_C", "N_5mC", "N_5hmC"], ["C", "5mC", "5hmC"])
     wgs_mods["proportion"] = wgs_mods["count"].div(wgs_sum)
 
-    hmedip_only = callstats_bar_df.groupby("Method").get_group("hMeDIP")
-    # for mod, hypothesis in zip(["C", "5mC", "5hmC"], ["less", "less", "greater"]):
-    #     exp_count = wgs_mods.loc[wgs_mods["mod"] == mod, "count"].to_list()[0]
-    #     exp_p = wgs_mods.loc[wgs_mods["mod"] == mod, "proportion"].to_list()[0]
-
-    #     counts = hmedip_only.loc[hmedip_only["mod"] == mod, "count"].to_numpy()       
-    #     nobs = hmedip_only.groupby("Replicate")["count"].sum().to_numpy()
-
-        # test = stats.binomtest(int(np.sum(counts)), int(np.sum(nobs)), exp_p, hypothesis)
-        # print("Binom:", mod, test)
-        # print("Z-Test:", mod, proportion.proportions_ztest(int(np.sum(counts)), int(np.sum(nobs)), exp_p))
-
-        # data = np.array([[int(np.sum(counts)), int(np.sum(nobs)) - int(np.sum(counts))], 
-        #                  [exp_count, wgs_sum - exp_count]])
-
-        # print("Fisher Exact:", mod, stats.fisher_exact(data, hypothesis))
-
     ttest_df = callstats_bar_df.groupby(["mod", "Method"])
 
     for mod in ["C", "5mC", "5hmC"]:
         genome = ttest_df.get_group((mod, "WGS"))
         n_hmedip = ttest_df.get_group((mod, "hMeDIP"))
-        
-        print("T-Test:", mod, pg.ttest(genome["proportion"].to_numpy(), n_hmedip["proportion"].to_numpy(), paired=False))
+        print(mod, n_hmedip["proportion"].to_numpy())
+        print("T-Test:\n", pg.ttest(genome["proportion"].to_numpy(), n_hmedip["proportion"].to_numpy(), paired=False))
 
     sns.barplot(callstats_bar_df.sort_values("Method"), 
                 x="mod", y="percentage",
@@ -269,6 +251,9 @@ def fig_main(dryrun=True, fontsize=5, threshold=10):
                     size="fold_enrichment", sizes=(1, 15),
                     ax=ax4)
     
+    print("Peaks over Z0 (Nanopore):", len(peak_overlay.query("zscore_Nanopore > 0"))/len(peak_overlay))
+    print("Peaks over Z0 (TAB):", len(peak_overlay.query("zscore_TAB > 0"))/len(peak_overlay))
+    
     sns.move_legend(ax4, "lower right", title="hMeDIP fold\nenrichment")
 
     ax4.set_xlabel("5hmC Z-Score (TAB)")
@@ -282,8 +267,6 @@ def fig_main(dryrun=True, fontsize=5, threshold=10):
         ax.axvline(kde_background["zscore_Nanopore"].mean(), ls=":", c="grey", lw=0.8)
 
     sns.despine()
-
-    # presentation_fig.savefig("plots/presentation_hMeDIPseq.svg", transparent=True)
 
     public_hmedip_dirpath = "/mnt/data1/doh28/data/public/PRJNA134133_hMeDIP/ucsc_converted/"
     public_hmedip = pd.concat([table.assign(Replicate = i) for i, table in enumerate(load_hmedip(public_hmedip_dirpath))])
