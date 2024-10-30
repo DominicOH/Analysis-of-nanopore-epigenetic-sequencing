@@ -73,13 +73,13 @@ def fig_main(dryrun=True):
                         .intersect(belongs_on_blacklist, invert=True))
         
     usecols = [["readCount", "N_C", "N_mC", "N_hmC", "percentMeth_5hmC"], ["readCount", "N_mod", "percentMeth_mod"]]
-    paths =  ["data/modbases/modbeds/nanopore/", "data/modbases/modbeds/tab/"]
+    paths =  ["data/modbases/modbeds/nanopore_base5/", "data/modbases/modbeds/tab/"]
 
     with concurrent.futures.ThreadPoolExecutor(4) as fetch_executor:
         nano_modbeds_fut, tab_modbeds_fut = [fetch_executor.submit(common.fetch_modbeds, path, sel_cols, dryrun) for path, sel_cols in zip(paths, usecols)]
         nano_modbeds = [future for future in nano_modbeds_fut.result()]
         tab_modbeds = [future.rename(columns={"percentMeth_mod" : "percentMeth_5hmC",
-                                                "N_mod" : "N_5hmC"}) for future in tab_modbeds_fut.result()]
+                                              "N_mod" : "N_5hmC"}) for future in tab_modbeds_fut.result()]
 
     with concurrent.futures.ThreadPoolExecutor(4) as merge_executor:
         nanopore_average, tab_average = merge_executor.map(common.merge_positions, [nano_modbeds, tab_modbeds])
@@ -168,11 +168,9 @@ def fig_main(dryrun=True):
     elif stat.pvalue < 0.05:
         star = "*"
     
-    axin.annotate(f"$\\rho$={round(stat.statistic, 3)}$^{{star}}$", 
+    axin.annotate(f"$\\rho$={round(stat.statistic, 3)}{star}", 
                   xy=(.5, 5.5))
     
-    # jg.set(yticklabels={"size" : 7}, xticklabels={"size" : 7})
-
     sns.move_legend(jg.ax_joint, "lower right", title="hMeDIP fold\nenrichment")
     print("Peaks over Z0 (Nanopore):", len(peak_overlay.query("zscore_Nanopore > 0"))/len(peak_overlay))
     print("Peaks over Z0 (TAB):", len(peak_overlay.query("zscore_TAB > 0"))/len(peak_overlay))
@@ -180,6 +178,9 @@ def fig_main(dryrun=True):
     print("Spearman (peaks vs. Nanopore):", stats.spearmanr(peak_overlay["zscore_Nanopore"], 
                                                             peak_overlay["fold_enrichment"]), 
                                                             "n=", len(peak_overlay))
+    print("Spearman (peaks vs. TAB):", stats.spearmanr(peak_overlay["zscore_TAB"], 
+                                                       peak_overlay["fold_enrichment"]), 
+                                                       "n=", len(peak_overlay))
     
     print("What proportion of enriched regions in (Nanopore) WGS are detected as hMeDIP peaks?")
     l1 = pr.PyRanges(kde_background.query("zscore_Nanopore > 0")).intersect(public_hmedip_pr, how="first", invert=True) # regions that are enriched AND NOT intersect peaks
@@ -188,12 +189,8 @@ def fig_main(dryrun=True):
     l1_bp_len = l1.as_df().apply(lambda r: r["End"] - r["Start"], axis=1).sum()
     print(f"Equivalent to {l1_bp_len} bp")
 
-    if dryrun:
-
-        jg.savefig("plots/tests/pcr_hmedip_comparison.png", dpi=600)
-    
-    else: 
-        jg.savefig("plots/pcr_hmedip_comparison.svg", dpi=600)
+    jg.savefig("plots/pcr_hmedip_comparison.png", dpi=300)    
+    jg.savefig("plots/pcr_hmedip_comparison.svg", dpi=300)
 
     ##### main function ##### 
 
