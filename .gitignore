@@ -21,5 +21,6 @@ feature_references/mm39.chrom.sizes
 feature_references/*.bed
 feature_references/*.tsv
 feature_references/*.bg
+feature_references/hg38/repeats/hg38_rmsk_cgi.tsv
 test_data/*
 .vscode
