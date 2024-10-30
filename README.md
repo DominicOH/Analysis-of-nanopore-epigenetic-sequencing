@@ -6,21 +6,13 @@ New nanopore sequence data in raw fast5 format as well as aligned bam format (al
 
 ## How to use this repository
 
-This repository is intended to enable reproduction of figures and statistics used in the associated publication. Users are recommended to download the extracted modified base information from the NCBI GEO repository where they are archived as GSE279860. Users will then need to replace filepaths used in these scripts to match their filesystem. Scripts are named according to the statistics, figure, or supplementary figure that they produce or are related to.
+This repository is intended to aid reproduction of figures and statistics used in the associated publication. Users are recommended to download the extracted modified base information from the NCBI GEO repository where they are archived as GSE279860. Users will then need to replace filepaths used in these scripts to match their filesystem. Scripts are named according to the statistics, figure, or supplementary figure that they produce or are related to.
 
-Some reference and data files, excluding large genomic references for which links are provided, in `feature_references` and `data` folders. Where this is not possible due to size, instructions are provided within scripts. 
+With the exception of large genomic references, for which links are provided, references and data files are provided in `feature_references` and `data` folders. Where this is not possible due to size, instructions are provided within scripts. 
 
-### If downloading raw fast5
+## Where to find data
 
-Fast5 data requires conversion to pod5 format file using pod5 tools before base-calling and aligning (to the mm39/GRCm39 reference genome) with Dorado. Do so using the pod5-file-format package: https://github.com/nanoporetech/pod5-file-format. 
-
-### If downloading bam format or aligning from basecalling
-
-Pre-processing is required first by sorting according to chromosomal position (`samtools sort`) and indexing using `samtools index`.
- 
-### Extracting modified bases
-
-Extracting modified bases was performed using `modkit pileup` and `modkit pileup-hemi` using the `--cpg` and `--mask` options, using the UCSC mm39 reference genome as a reference. 
+Follow the README.md file in the `data/` directory for links and information to access all datasets. 
 
 ## Comparison with public datasets
 
@@ -33,3 +25,5 @@ This repository refers to public datasets, including oxBS-seq and TAB-seq data p
 4. Duplicate reads were removed using `deduplicate_bismark`
 5. Modified bases were extracted in CpG positions using `bismark_methylation_extractor --merge_non_CpG --bedGraph --zero_based` 
 6. Repeat sequences (repeatMasker) were removed using `bedtools intersect -v mm39_repeatMasker.bed`.   
+
+Additionally, we make use of hMeDIP-seq data procured from NCBI's Gene Expression Omnibus under accession: GSE25398. These datasets were processed using a pipeline comprised of Trim Galore!, Picard, and MACS2, which is available here: https://github.com/DominicOH/ChIP2MACS2. 
