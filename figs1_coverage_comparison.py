@@ -115,7 +115,7 @@ class Bed4:
                     skiprows = None
         else: 
             usecols = 4
-            skiprows = lambda x: x % 2 == 0
+            skiprows = lambda x: x % 2 == 0 # bedMethyl files contain duplicate columns for m and h, this skips every other row
 
         if test_run:
             nrows = 100000
@@ -252,7 +252,7 @@ def tech_context_depth(bed4s: list[Bed4], path, tech):
     return all_reps
 
 @timer
-def main():
+def main(bed_directories):
     sns.set_style("ticks")
     mpl.rc('font', size=5)
 
@@ -304,10 +304,7 @@ def main():
         print(all_medians)
 
     ### Line plots of coverage depth per c ###
-    bed_paths = ["data/modbases/nanopore/both_reps/", 
-                 "data/modbases/public/CRR008808_oxBS/bed_convert/", 
-                 "data/modbases/public/CRR008807_TAB/bed_convert/"]
-    all_beds = [open_bed4(path) for path in bed_paths]
+    all_beds = [open_bed4(path) for path in bed_directories]
 
     print("Plotting C-depth lineplots")
     nano_hists, ox_hists, tab_hists  = *all_beds[:4], *all_beds[4:7], *all_beds[7:] 
@@ -355,6 +352,8 @@ def main():
 
     ### Feature context coverage ###
     print("Plotting context/depth comparison")
+    
+    # Files produced using AnalysisTools/median_feature_depth 
     feature_comparison_paths = ["data/depth_analysis/nanopore/",
                                 "data/depth_analysis/oxbs/",
                                 "data/depth_analysis/tab/"]
@@ -382,7 +381,7 @@ def main():
     ### GC% depth comparison ### 
     # mouse mean gc % content: 
     
-    mm39 = pd.read_table("/mnt/data1/doh28/data/reference_genomes/mm39/mm39.fa.nucBed")
+    mm39 = pd.read_table("data/depth_analysis/mm39.fa.nucBed")
     total_bases = mm39[["6_num_A", "7_num_C", "8_num_G", "9_num_T"]].sum().sum()
     total_gc = mm39[["7_num_C", "8_num_G"]].sum().sum()
 
@@ -461,7 +460,11 @@ def main():
 if __name__=="__main__":
     parser = argparse.ArgumentParser(
         prog = "compare_coverage",
-        description = "Compares the coverage of the different datasets.")
+        description = "Compares the coverage of the different datasets. ")
+    parser.add_argument("bed_directories", dest="bed_directories",  action="store_true", default=False, 
+        help="Filepaths of directories containing BED or bedMethyl format data. \n\
+              Note: Bismark .zero.cov files require conversion to BED4 where the fourth field contains the depth of the position.\n\
+              \tUse: awk ")
     parser.add_argument("-t", "--test-run", dest="test_run",  action="store_true", default=False)
     parser.add_argument("--print-stats", dest="print_stats",  action="store_true", default=False)
 
@@ -473,5 +476,5 @@ test_run = args.test_run
 global print_stats
 print_stats = args.print_stats
 
-main()
+main(args.bed_directories)
 print("Completed.")
