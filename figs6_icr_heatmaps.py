@@ -8,10 +8,10 @@ from matplotlib import cm
 from AnalysisTools.helpers import timer
 
 @timer
-def fig_main(extract_path, include_bed, outpath, width, height):
+def fig_main(extract_path, outpath, width, height):
     merged_read_table = fetch_reads_from_modkit.ModkitExtract(extract_path).cpg_table
     print("Loading modkit extract data")
-    merged_read_table.set_include_bed(include_bed)
+    merged_read_table.set_include_bed('feature_references/dmr/mm39_dmr_coordinates_modified.bed')
 
     fig, axes = plt.subplots(5, 3,
                             dpi=600, 
@@ -48,8 +48,6 @@ if __name__=="__main__":
                         description = "Produce a figure of heatmaps, across multiple DMRs, with reads split by allele.")
     parser.add_argument("extract_path", 
                         help="Path to modkit extract output.")
-    parser.add_argument("include_bed", 
-                        help="Path to DMR bed file.")
     parser.add_argument("-w ", "--width", 
                         action="store", 
                         dest="width", 
@@ -67,4 +65,4 @@ if __name__=="__main__":
                         help="Filename for output.")
     args = parser.parse_args()
 
-    fig_main(args.extract_path, args.include_bed, args.outpath, args.width, args.height)
+    fig_main(args.extract_path, args.outpath, args.width, args.height)
