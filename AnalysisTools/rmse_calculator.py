@@ -1,10 +1,10 @@
 from sklearn.metrics import root_mean_squared_error, median_absolute_error
 import pandas as pd
 import concurrent.futures
-from AnalysisTools import common
+import common
 import numpy as np
 import argparse
-from AnalysisTools.helpers import timer
+from helpers import timer
 
 """
 This script is used to calculate Root Mean Square Deviation between various permutations of the Nanopore and Bisulphite data. 

@@ -1,7 +1,4 @@
 import pandas as pd
-from concurrent import futures
-from AnalysisTools import read_modbed
-import os 
 import subprocess
 import concurrent.futures
 
@@ -9,7 +6,7 @@ def read_table(path, usecols: list=None, test_run: bool=False):
     default_usecols = ["Chromosome", "Start", "End"]
 
     if test_run:
-        nrows=100000
+        nrows=1000000
     else: 
         nrows=None
 
@@ -33,18 +30,6 @@ def fetch_modbeds(dirpath, usecols=None, test_run: bool = False):
         tables = [table.rename(columns={"N_mC" : "N_5mC", "N_hmC" : "N_5hmC"}) for table in tables]
     
     return tables
-
-def fetch_controls(usecols, test_run=False):
-    zymo_controls = ["data/modbases/controls/zymo_wga_methylated_rep1.sorted.modbed", "data/modbases/controls/zymo_wga_methylated_rep2.sorted.modbed",
-                     "data/modbases/controls/zymo_wga_unmodified_rep1.sorted.modbed", "data/modbases/controls/zymo_wga_unmodified_rep2.sorted.modbed"]
-
-    with concurrent.futures.ProcessPoolExecutor(4) as ppe:
-        futures = [ppe.submit(read_table, path, usecols, test_run) for path in zymo_controls]
-        ctrl_dfs = [future.result() for future in futures]
-
-        [df.rename(columns={"N_mC" : "N_5mC", "N_hmC" : "N_5hmC"}, inplace=True) for df in ctrl_dfs]
-
-    return ctrl_dfs
 
 def calculate_percentages(df: pd.DataFrame, cols) -> pd.DataFrame:
     if type(cols) == list:

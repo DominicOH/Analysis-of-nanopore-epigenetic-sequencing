@@ -118,6 +118,9 @@ def fig_main(dryrun=True):
         
     sns.kdeplot(kde_background, x="zscore_TAB", y="zscore_Nanopore", 
                 ax=jg.ax_joint, color="#9ecae1", fill=True)
+    
+    with pd.ExcelWriter('source_data/figs4_peak_overlay.xlsx') as writer:
+        peak_overlay.to_excel(writer, 'figs4_peak_overlay')
 
     sns.scatterplot(peak_overlay.sort_values("fold_enrichment"),
                         x="zscore_TAB",

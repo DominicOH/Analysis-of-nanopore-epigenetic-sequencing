@@ -46,6 +46,7 @@ def feature_stats(annotated_dataset: pd.DataFrame):
 
 @timer
 def fig_main(figsize, fontsize, dryrun=True):
+
     fig = plt.figure(figsize=[a for a in map(lambda d: float(d)/25.4, figsize)], 
                      dpi=600, layout="constrained")
 
@@ -129,6 +130,7 @@ def fig_main(figsize, fontsize, dryrun=True):
     ax4.axhline(0, c="grey", lw=.8, ls=":")
 
     print("Writing violin plot of annotated positions")
+    annotated_all.to_csv('source_data/fig2d_violin.csv.gz')
     sns.violinplot(annotated_all, 
                    x="feature_type", y="zscore", 
                    cut=2, linewidth=.5, density_norm="width",
@@ -157,6 +159,12 @@ def fig_main(figsize, fontsize, dryrun=True):
         n=1000000
 
     dfs = [nanopore_average, ox_average, nanopore_average, tab_average]
+    csv_names = ['nanopore_site_average.csv.gz', 'ox_site_average.csv.gz', 'tab_site_average.csv.gz']
+    csv_names = ['source_data/' + name for name in csv_names]
+
+    for df, name in zip([nanopore_average, ox_average, tab_average], csv_names):
+        df.to_csv(name)
+
     dfs = [df.sample(n, random_state=42) for df in dfs]
 
     xs = ["percentMeth_5mC", "percentMeth_5mC", "percentMeth_5hmC", "percentMeth_5hmC"]
@@ -182,7 +190,6 @@ def fig_main(figsize, fontsize, dryrun=True):
     nano_oxbs = (pd.concat([nanopore_average, ox_average], join="inner", copy=False)
                  .pivot_table(values="percentMeth_5mC", index=["Chromosome", "Start", "End"], columns="Method").dropna())
     del ox_average
-
     nano_tab = (pd.concat([nanopore_average, tab_average], join="inner", copy=False)
                 .pivot_table(values="percentMeth_5hmC", index=["Chromosome", "Start", "End"], columns="Method").dropna())
     del tab_average, nanopore_average
@@ -201,12 +208,17 @@ def fig_main(figsize, fontsize, dryrun=True):
                                                                                                                        ["oxBS", "TAB"], 
                                                                                                                        ["5mC", "5hmC"])]
         nano_oxbs, nano_tab = [future.result() for future in dev_plot_futures]
-
+    
     gc.collect()
     [print("Sites compared: ", len(df)) for df in [nano_oxbs, nano_tab]]
     ax3.axvline(0, ls=":", c="grey", lw=0.8)
-    
-    sns.histplot(pd.concat([nano_oxbs, nano_tab]),
+
+    concat = pd.concat([nano_oxbs, nano_tab])
+    del nano_oxbs, nano_tab
+
+    concat.to_csv('fig2c_diff_hist.csv.gz')
+
+    sns.histplot(concat,
                 x="diff", 
                 stat="proportion",
                 binrange=(-50, 50), binwidth=2,

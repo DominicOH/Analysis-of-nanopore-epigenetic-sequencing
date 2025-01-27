@@ -1,5 +1,5 @@
 # Data
-Several datasets are referred to throughout the analysis. These are all publicly available in both raw and processed formats. 
+Several datasets are referred to throughout the analysis.
 
 ## Tabulated modification data
 We recommend downloading these processed data files (Series GSE279860):
@@ -44,13 +44,17 @@ Extracting modified bases was performed using `modkit pileup` and `modkit pileup
 
 Where read information is required `modkit extract calls --cpg --pass-only --reference mm39.fa` is used. This is specified within scripts. 
 
-## Raw
-We recommend only downloading the processed files. These raw data are very large and take a long time to base-call and process. If needed however, raw fast5 data can be downloaded from here:
+## Machine data
+We recommend only downloading the processed files. These raw machine data are very large and take a long time to base-call and process. If needed however, they can be downloaded in fast5 format can be downloaded from here:
 
 - CBM2_1: [SRX26304802](https://www.ncbi.nlm.nih.gov/sra/SRX26304802[accn])
 - CBM2_2: [SRX26304803](https://www.ncbi.nlm.nih.gov/sra/SRX26304803[accn])
 - CBM3_1: [SRX26304804](https://www.ncbi.nlm.nih.gov/sra/SRX26304804[accn])
 - CBM3_2: [SRX26304805](https://www.ncbi.nlm.nih.gov/sra/SRX26304805[accn])
+
+Machine data is available in pod5 format for the hMeDIP-seq replicates on Zenodo: https://doi.org/10.5281/zenodo.14514704. Please note that, due to individual file size limits, the archive for hMeDIP replicate 3 had to be broken into 5 smaller archives. Simply untar these into the same output directory and basecall using the `--recursive` option to include all data.   
+
+__Raw machine data are not available for any of the Zymo DNA Methylation Standard samples.__
 
 ### If downloading raw fast5
 Fast5 data requires conversion to pod5 format file using pod5 tools before base-calling and aligning (to the mm39/GRCm39 reference genome) with Dorado. Do so using the pod5-file-format package: https://github.com/nanoporetech/pod5-file-format. 

@@ -37,7 +37,7 @@ def main():
                 ax=ax1)
     
     ax1.set_title("Intra-assay deviation")
-
+    
     sns.lineplot(all_iarmsd, 
                 x="Depth", y="Mean", 
                 errorbar=None,
@@ -59,6 +59,10 @@ def main():
                 hue="Modification", 
                 palette="GnBu", 
                 ax=ax3)  
+    
+    with pd.ExcelWriter('source_data/figs2_rmsd_source_data.xlsx') as writer:
+        all_iarmsd.to_excel(writer, 'figs2a-b_intraassay')
+        rmsds.to_excel(writer, 'figs2c_interassay')
     
     ax3.set_title("Inter-assay deviation")
 

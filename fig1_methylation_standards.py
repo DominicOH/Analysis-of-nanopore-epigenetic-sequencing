@@ -97,6 +97,7 @@ def precision_recall(modified_control: pd.DataFrame,
         n_samples=100000000
     else:
         n_samples=1000000
+        
     print(f"Resampling to {n_samples} basecalls and plot PR Curve")
 
     gt_r, pred_r = resample(gt, pred, n_samples=n_samples, random_state=42)
@@ -162,6 +163,8 @@ def repeat_barplot(controls: list[Control], ax=plt.Axes, mod=None):
         
         results = results.replace(["FPR_5mC", "FPR_5hmC"], ["5mC", "5hmC"])
 
+        results.to_excel(writer, 'fig1e_negative_repeats_bar')
+
         sns.barplot(results, 
                     x="Score", y="value", 
                     hue="variable", hue_order=["Total", "5mC", "5hmC"],
@@ -183,6 +186,8 @@ def repeat_barplot(controls: list[Control], ax=plt.Axes, mod=None):
         with concurrent.futures.ProcessPoolExecutor(2) as ppe:
             futures = [ppe.submit(control.calculate_feature_fpr, feature_ref, mod) for control in controls]
             results = pd.concat([future.result().assign(Replicate = i) for i, future in enumerate(futures)])
+
+        results.to_excel(writer, 'fig1e_positive_repeats_bar')
 
         sns.barplot(results, 
                     x="Score", y="FPR", 
@@ -227,6 +232,8 @@ def gc_plots(ax: plt.Axes):
     ax.axhline(y=(dataset["N_5mC"].sum()+dataset["N_5hmC"].sum())/dataset["readCount"].sum(), 
                   c="grey", ls=":")  
     
+    dataset_melt.to_excel(writer, 'fig1b_gc_lineplot')
+
     sns.lineplot(dataset_melt, 
                  x="GCBin", y="FPR", 
                  hue="modType", palette=sns.color_palette("GnBu", 3)[1:], lw=1, 
@@ -270,13 +277,17 @@ def gc_plots(ax: plt.Axes):
     return 
         
 @timer
-def main(pileups, extracts):
+def main(control_path, extracts):
     print("Fetching data")
-    controls = common.fetch_modbeds(pileups, 
-                                    ["readCount", "N_C", "N_mC", "N_hmC"], 
-                                    test_run=test_run)
+    cols = ["readCount", "N_C", "N_mC", "N_hmC"]
+
+    controls = common.fetch_modbeds(control_path, cols, test_run)
     controls = list(map(lambda df: Control(df), controls))
+
     print("Data fetched")
+
+    global writer
+    writer = pd.ExcelWriter('source_data/fig1_source_data.xlsx')
 
     fig = plt.figure(figsize=(180/25.4, 120/25.4), dpi=600, layout="constrained")
     mpl.rc('font', size=5)
@@ -343,6 +354,7 @@ def main(pileups, extracts):
     gc_plots(gc_bar_plot_ax)
 
     print("Making motif logo")
+    
     extract_dfs = pd.concat([pd.read_table(path, names=names, usecols=["readID", "call_code", "query_kmer"], nrows=nrows) 
                              for path in extracts])
     
@@ -355,8 +367,10 @@ def main(pileups, extracts):
         m_only_mat, h_only_mat = [logomaker.alignment_to_matrix(frame["query_kmer"], counts=frame["count"]) 
                               for frame in [m_only, h_only]]
         
-        for mat, ax in zip([m_only_mat, h_only_mat], [logos_m_ax, logos_h_ax]):
+        for mat, ax, name in zip([m_only_mat, h_only_mat], [logos_m_ax, logos_h_ax], ['fig1c_5mC_logo', 'fig1d_5hmC_logo']):
             mat = logomaker.transform_matrix(mat, normalize_values=True)
+
+            mat.to_excel(writer, name)
             logomaker.Logo(mat, fade_probabilities=True, color_scheme="base_pairing", ax=ax)
 
             print("GC%:", mat["G"].mean() + mat["C"].mean())
@@ -393,6 +407,7 @@ def main(pileups, extracts):
 
     sns.despine()
 
+    writer.close()
     fig.savefig("plots/control_roc.png")
     if not test_run:
         fig.savefig("plots/control_roc.svg")
@@ -403,23 +418,15 @@ if __name__=="__main__":
     parser = argparse.ArgumentParser(
         prog = "fig1_methylation_standards",
         description = 
-        "Produce analyses of Nanopore modification detection using data from the Human Methylated & Non-Methylated (WGA) DNA Set (Zymo Research, D5013).\n\
-        \n\
-        Required data inputs: \n\
-            1. Output from `modkit pileup --cpg <modbam>` (-p)\n\
-            2. Output from `modkit extract --cpg <modbam>` (-e)\n")
-    parser.add_argument("-p", "--modkit-pileup",
-        action="store", 
-        dest="pileups",
-        nargs="+",
-        required=True,
-        help="Whitespace-separated list of outputs from modkit pileup --cpg.")
+        "Produce analyses of Nanopore modification detection using data from the Human Methylated & Non-Methylated (WGA) DNA Set (Zymo Research, D5013).")
+    parser.add_argument("directory_filepath",
+        help="Directory filepath where control data are stored. Files in directory are the output of AnalysisTools/read_modbed.py. See AnalysisTools/read_modbed.py for more details.")
     parser.add_argument("-e ", "--modkit-extract", 
         action="store", 
         dest="extracts", 
         nargs="+",
         required=True,
-        help="Output from modkit extract --cpg.")
+        help="Whitespace separated list of outputs from from modkit extract --cpg.")
     parser.add_argument("-t ", "--test-run", 
         action="store_true", 
         dest="test_run", 
@@ -434,4 +441,4 @@ if __name__=="__main__":
     else: 
         test_run = False
 
-    main(args.pileups, args.extracts)    
+    main(args.directory_filepath, args.extracts)    

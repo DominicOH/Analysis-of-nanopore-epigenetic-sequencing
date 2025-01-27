@@ -10,9 +10,11 @@ This repository is intended to aid reproduction of figures and statistics used i
 
 With the exception of large genomic references, for which links are provided, references and data files are provided in `feature_references` and `data` folders. Where this is not possible due to size, instructions are provided within scripts. 
 
-## Where to find data
+## Source data
 
-Follow the README.md file in the `data/` directory for links and information to access all datasets. 
+Source data can be downloaded for most plots and figures from Figshare using this link: <link to come>
+
+To reproduce this analysis from scratch, follow the README.md file in the `data/` directory for links and information to all raw datasets. 
 
 ## Comparison with public datasets
 

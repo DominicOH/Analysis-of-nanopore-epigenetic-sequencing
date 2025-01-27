@@ -182,6 +182,8 @@ def fig_main(dryrun=True, fontsize=5, threshold=10):
         print(mod, n_hmedip["proportion"].to_numpy())
         print("T-Test:\n", pg.ttest(genome["proportion"].to_numpy(), n_hmedip["proportion"].to_numpy(), paired=False))
 
+    writer = pd.ExcelWriter('source_data/fig3_source_data.xlsx')
+    callstats_bar_df.to_excel(writer, 'fig3c_mod_percentages')
     sns.barplot(callstats_bar_df.sort_values("Method"), 
                 x="mod", y="percentage",
                 hue="Method", palette="PuBuGn",
@@ -220,7 +222,9 @@ def fig_main(dryrun=True, fontsize=5, threshold=10):
                     .head(1)
                     .eval("Peak_length = End_Peak - Start_Peak")
                     .query("Overlap >= (Peak_length / 2)")) # At least half the peak must sit in the region
-    
+                    
+    peak_overlay.to_excel(writer, 'fig3d_peak_scatter')
+    kde_background.to_csv('source_data/fig3d_kde_background.csv.gz')
     sns.kdeplot(kde_background, 
                 x="zscore_TAB",
                 y="zscore_Nanopore",
@@ -278,7 +282,10 @@ def fig_main(dryrun=True, fontsize=5, threshold=10):
     feature_barplot = pd.concat([df.assign(Method = method) for method, df in zip(["Direct hMeDIP", "Genome", "PCR hMeDIP"], annotated_all)])
 
     feature_barplot.eval("percentage = proportion * 100", inplace=True)
-    sns.barplot(feature_barplot.reset_index(),
+    feature_barplot = feature_barplot.reset_index()
+
+    feature_barplot.to_excel(writer, 'fig3c_feature_coverage')
+    sns.barplot(feature_barplot,
                 x="feature_type", y="percentage",
                 errorbar=("sd", 1), err_kws={"lw" : 0.8}, capsize=.25,
                 order=["Intergenic", "Intron", "Exon", "Promoter"],
@@ -290,11 +297,13 @@ def fig_main(dryrun=True, fontsize=5, threshold=10):
                   x="feature_type", y="percentage",
                   dodge=True,
                   order=["Intergenic", "Intron", "Exon", "Promoter"],
-                  hue="Method", hue_order=["Genome", "Direct hMeDIP", "PCR hMeDIP"],
+                  hue="Method", hue_order=["Direct hMeDIP", "PCR hMeDIP"],
                   legend=False, color="k",
                   size=3,
                   ax=ax2)
     
+    writer.close()
+
     feature_barplot_stats = feature_barplot.groupby(["Method", "feature_type"])
     for feature, hypothesis in zip(["Intergenic", "Intron", "Exon", "Promoter"], ["less", "greater", "greater", "greater"]):
         genome_p = feature_barplot_stats.get_group(("Genome", feature))["proportion"].to_list()[0]

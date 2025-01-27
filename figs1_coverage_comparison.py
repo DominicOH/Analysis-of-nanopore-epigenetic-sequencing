@@ -204,11 +204,12 @@ def open_bed4(dirpath, **kwargs):
     """
     return [Bed4(path) for path in files_from_dir(dirpath, **kwargs)]
 
-def make_depth_hist(data: list[Bed4], ax: plt.Axes, replicates: list[str], **kwargs):
+def make_depth_hist(data: list[Bed4], ax: plt.Axes, replicates: list[str], sheet_name=str, **kwargs):
     with concurrent.futures.ProcessPoolExecutor(len(data)) as tpe:
         grouped_depths = tpe.map(Bed4.group_depth, data)
         depths = pd.concat([df.assign(Replicate = i) for df, i in zip(grouped_depths, replicates)]).reset_index(drop=True)
     
+    depths.to_excel(writer, sheet_name=sheet_name)
     depths = depths.assign(PercentBases = lambda r: (r["Count"]/depths["Count"].sum())*100)
     plot = sns.lineplot(depths, x="Depth", y="PercentBases", 
                         hue="Replicate", 
@@ -226,6 +227,7 @@ def make_coverage_comparison(data: list[GenomeCov], ax: plt.Axes):
         "Replicate" : [genomecov.replicate for genomecov in data], 
         "Proportion covered" : [genomecov.covered_proportion() for genomecov in data]})
 
+    all_proportions.to_excel(writer, 'figs1i_coverage_compare')
     sns.barplot(all_proportions, 
                 y="Tech", x="Proportion covered",
                 hue="Tech", palette="Accent",
@@ -252,7 +254,10 @@ def tech_context_depth(bed4s: list[Bed4], path, tech):
     return all_reps
 
 @timer
-def main(bed_directories):
+def main(nanopore_filepath, oxbs_filepath, tab_filepath):
+    global writer
+    writer = pd.ExcelWriter('source_data/figs1_source_data.xlsx')
+
     sns.set_style("ticks")
     mpl.rc('font', size=5)
 
@@ -269,10 +274,11 @@ def main(bed_directories):
     feature_coverage_ax = fig.add_subplot(gs[2, :4])
     coverage_comparison_ax = fig.add_subplot(gs[2, 4:])
 
-    print("Loading bedtools genomecov datasets...")    
-    genomecov_paths = ["data/depth_analysis/nanopore/",
-                       "data/depth_analysis/tab",
-                       "data/depth_analysis/oxbs"]
+    print("Loading bedtools genomecov datasets...")
+    # Produced using bedtools genomecov
+    genomecov_paths = ["data/depth_analysis/genome_cov/nanopore/",
+                       "data/depth_analysis/genome_cov/tab/",
+                       "data/depth_analysis/genome_cov/oxbs/"]
 
     nanopore_genomecovs, tab_genomecovs, oxbs_genomecovs = map(open_genomecovs, genomecov_paths)
 
@@ -283,6 +289,7 @@ def main(bed_directories):
     })
 
     print("Plotting median depth")
+    all_medians.to_excel(writer, 'figs1d_median_genomic')
     sns.barplot(all_medians, 
                 x="Tech", y="Median",
                 hue="Tech", palette="Accent",
@@ -296,6 +303,7 @@ def main(bed_directories):
                   color="k", size=3, 
                   ax=median_barplot_ax)
     
+    
     median_barplot_ax.set_ylabel("Median depth (genomic)")
     median_barplot_ax.set_xlabel(None)
 
@@ -304,14 +312,17 @@ def main(bed_directories):
         print(all_medians)
 
     ### Line plots of coverage depth per c ###
-    all_beds = [open_bed4(path) for path in bed_directories]
+    nano_dfs = open_bed4(nanopore_filepath)
+    tab_dfs = open_bed4(tab_filepath) 
+    oxbs_dfs = open_bed4(oxbs_filepath) 
 
     print("Plotting C-depth lineplots")
-    nano_hists, ox_hists, tab_hists  = *all_beds[:4], *all_beds[4:7], *all_beds[7:] 
+    
+    sheet_names = ['figs1a_nanopore', 'figs1b_oxbs', 'figs1c_tab']
 
-    make_depth_hist(nano_hists, nano_hist_ax, ["CBM2_1", "CBM2_2", "CBM3_1","CBM3_2"], palette="Greens")
-    make_depth_hist(ox_hists, oxbs_hist_ax, ["1", "2"], palette="Oranges")
-    make_depth_hist(tab_hists, tab_hist_ax, ["1", "2", "3"], palette="Purples")
+    make_depth_hist(nano_dfs, nano_hist_ax, ["CBM2_1", "CBM2_2", "CBM3_1","CBM3_2"], palette="Greens", sheet_name=sheet_names[0])
+    make_depth_hist(oxbs_dfs, oxbs_hist_ax, ["1", "2"], palette="Oranges", sheet_name=sheet_names[1])
+    make_depth_hist(tab_dfs, tab_hist_ax, ["1", "2", "3"], palette="Purples", sheet_name=sheet_names[2])
     
     for ax, title in zip([nano_hist_ax, oxbs_hist_ax, tab_hist_ax], ["Nanopore", "oxBS-seq", "TAB-seq"]):
         ax.set_xlabel("Depth at CpG")
@@ -322,9 +333,10 @@ def main(bed_directories):
     cpg_median_depth_df = pd.DataFrame({
         "Tech" : [*["Nanopore"]*4, *["TAB"]*3, *["oxBS"]*2],
         "Replicate" : [i for i in range(9)], 
-        "CpGDepth" : [bed.median for bed in chain.from_iterable(all_beds)]  
+        "CpGDepth" : [bed.median for bed in chain.from_iterable([nano_dfs, tab_dfs, oxbs_dfs])]  
     })
 
+    cpg_median_depth_df.to_excel(writer, 'figs1e_median_cpg')
     sns.barplot(cpg_median_depth_df,
                 x="Tech", y="CpGDepth",
                 hue="Tech", palette="Accent",
@@ -359,9 +371,11 @@ def main(bed_directories):
                                 "data/depth_analysis/tab/"]
     
     all_feature_comparisons = pd.concat([tech_context_depth(bed4s, path, tech)
-                                         for bed4s, path, tech in zip(all_beds,
+                                         for bed4s, path, tech in zip([nano_dfs, tab_dfs, oxbs_dfs],
                                                                       feature_comparison_paths, 
                                                                       ["Nanopore", "oxBS", "TAB"])])
+
+    all_feature_comparisons.to_excel(writer, 'figs1h_feature_comparison')
     sns.stripplot(all_feature_comparisons, 
                   x="Context", y="DiffToGenome",
                   hue="Tech", palette="Accent", 
@@ -394,7 +408,7 @@ def main(bed_directories):
     gc_paths = files_from_dir("data/depth_analysis/gc/")
     with concurrent.futures.ProcessPoolExecutor(3) as ppe:
         gc_futures = [ppe.submit(bed.compare_to_gc, path)
-                      for bed, path in zip(chain.from_iterable(all_beds), gc_paths)]
+                      for bed, path in zip(chain.from_iterable([nano_dfs, tab_dfs, oxbs_dfs]), gc_paths)]
         gc_data = pd.concat([future.result().assign(Tech = tech,
                                                     Replicate = i) 
                              for future, tech, i in zip(gc_futures, 
@@ -412,8 +426,8 @@ def main(bed_directories):
     handles_median, leg_labels_median = gc_depth_ax.get_legend_handles_labels()
     gc_data_grouped = gc_data.groupby("Tech")
 
-    new_labels_median = []
-    new_labels_percentage = []
+    new_labels_median = list()
+    new_labels_percentage = list()
     for group, label in zip(gc_data_grouped.groups, leg_labels_median):
         data = gc_data.groupby("Tech").get_group(group).dropna()
         median_stat = stats.spearmanr(data["MedianDepth"], data["GCBin"]).statistic
@@ -438,6 +452,8 @@ def main(bed_directories):
                  lw=1, style="Tech",
                  ax=gc_vmedian_ax)
     
+    gc_data.to_excel(writer, 'figs1f-g_gc')
+    
     handles_percent, _ = gc_vmedian_ax.get_legend_handles_labels()
     gc_vmedian_ax.axvline(mean_gc, c="grey", ls="dashdot", lw=0.8)
     gc_vmedian_ax.set_ylabel("Difference to median\nCpG depth (%)")
@@ -450,7 +466,8 @@ def main(bed_directories):
                     title=None, frameon=True,
                     bbox_to_anchor=(.5, .8)
                     )
-
+        
+    writer.close()
     fig.savefig("plots/compare_coverage.png")
     if not test_run:
         fig.savefig("plots/compare_coverage.svg")
@@ -461,13 +478,20 @@ if __name__=="__main__":
     parser = argparse.ArgumentParser(
         prog = "compare_coverage",
         description = "Compares the coverage of the different datasets. ")
-    parser.add_argument("bed_directories", dest="bed_directories",  action="store_true", default=False, 
-        help="Filepaths of directories containing BED or bedMethyl format data. \n\
+    parser.add_argument("-n", "--nanopore_filepath", metavar="Nanopore dir path",
+        help="Filepaths of directories containing nanopore modified base data in BED or bedMethyl format data. \n\
               Note: Bismark .zero.cov files require conversion to BED4 where the fourth field contains the depth of the position.\n\
               \tUse: awk ")
-    parser.add_argument("-t", "--test-run", dest="test_run",  action="store_true", default=False)
+    parser.add_argument("-o", "--oxbs_filepath", metavar="oxBS dir path",
+        help="Filepaths of directories containing oxBS modified base data in BED format data. \n\
+              Note: Bismark .zero.cov files require conversion to BED4 where the fourth field contains the depth of the position.\n\
+              \tUse: awk ")
+    parser.add_argument("-t", "--tab_filepath", metavar="TAB dir path",
+        help="Filepaths of directories containing TAB modified base data in BED format data. \n\
+              Note: Bismark .zero.cov files require conversion to BED4 where the fourth field contains the depth of the position.\n\
+              \tUse: awk ")
+    parser.add_argument("--test-run", dest="test_run",  action="store_true", default=False)
     parser.add_argument("--print-stats", dest="print_stats",  action="store_true", default=False)
-
 args = parser.parse_args()
 
 global test_run
@@ -476,5 +500,5 @@ test_run = args.test_run
 global print_stats
 print_stats = args.print_stats
 
-main(args.bed_directories)
+main(args.nanopore_filepath, args.oxbs_filepath, args.tab_filepath)
 print("Completed.")

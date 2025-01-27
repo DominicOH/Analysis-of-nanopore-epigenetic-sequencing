@@ -59,6 +59,8 @@ def main():
     dunn_result = sp.posthoc_dunn(violin_reads, val_col='abs', group_col='Pattern', p_adjust='holm')
     print("Dunn post hoc analysis", dunn_result)
 
+    violin_reads.to_csv('source_data/fig5b_distances.csv.gz')
+
     sns.violinplot(violin_reads, 
                    x="Pattern", y="Distance", 
                    color="#99d8c9",
@@ -176,6 +178,9 @@ def main():
                   order=["5hmC:5hmC", "C:5mC", "C:5hmC", "5mC:5hmC"],
                   hue_order=["Genome average", "CTCF motif", "ChIP summit"],
                   ax=ax2)
+
+    with pd.ExcelWriter('source_data/fig5a_source_data.xlsx') as writer:
+        motif_vs_chip.to_excel(writer, 'fig5a_proportions')
     
     ax2.set_ylabel(None)
 

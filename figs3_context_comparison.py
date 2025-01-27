@@ -58,7 +58,7 @@ def calculate_stats(df):
              .to_numpy())
         mw = stats.mannwhitneyu(x, y)
         cohen_stat = cohen(x, y)
-        rmsd = metrics.mean_squared_error(x, y, squared=False)
+        rmsd = metrics.root_mean_squared_error(x, y)
         out.update({feature_type : [round(n, 4) for n in [cohen_stat, rmsd, mw.pvalue]]})
     return out
 
@@ -111,6 +111,9 @@ def fig_main(fontsize=5):
     gene_enrichment = gene_enrichment.loc[gene_enrichment["feature_type"] == "Gene body"]
 
     all_enrichment = pd.concat([features_enrichment, gene_enrichment])
+    
+    with pd.ExcelWriter('source_data/figs3_context_source_data.xlsx') as writer:
+        all_enrichment.to_excel(writer, 'figs3_context_enrichment')
         
     # Fig setup # 
     

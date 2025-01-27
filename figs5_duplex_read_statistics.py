@@ -32,7 +32,7 @@ def make_pie(patterns: pd.DataFrame, mod: str, ax: plt.Axes, palette):
                    autopct='%.1f')
 
 def main():
-    dx_count_data = pd.read_table("data/duplex_data/dx_counts.tsv", index_col=0)
+    dx_count_data = pd.read_table("data/duplex_data/figs5_source_data.tsv", index_col=0)
 
     bar_df = dx_count_data.melt(id_vars="Bam", value_vars=["Duplex", "Orphan simplex"], var_name="Read type", value_name="Read count")
 
@@ -72,6 +72,10 @@ def main():
 
     for ax, mod in zip([ax2, ax3, ax4], ["-", "m", "h"]):
         make_pie(patterns, mod, ax, palette.values())
+
+    with pd.ExcelWriter('source_data/figs5_source_data.xlsx') as writer:
+        bar_df.to_excel(writer, 'figs5a_readcount')
+        patterns.to_excel(writer, 'figs5b-d_mod_patterns')
 
     [ax.set_title(ascii_lowercase[i], fontweight="bold", loc="left") for i, ax in enumerate(fig.axes)]
     [ax.set_title(title) for ax, title in zip([ax2, ax3, ax4], ["C", "5mC", "5hmC"])]
