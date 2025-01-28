@@ -60,26 +60,28 @@ def main():
     sns.boxplot(all_replicates_df, 
                 x="gene_name",
                 y="count", 
-                palette="GnBu",
+                palette="Paired_d",
                 hue="read_type",
                 fill=False,
                 hue_order=["Unmethylated", "Methylated"],
+                showfliers=False,
                 dodge=True,
                 ax=ax)
     
-    sns.stripplot(all_replicates_df, 
+    sns.swarmplot(all_replicates_df, 
                   x="gene_name",
                   y="count", 
-                  palette="GnBu",
+                  palette="Paired_d",
                   hue="read_type",
                   hue_order=["Unmethylated", "Methylated"],
                   dodge=True,
+                  legend=False,
                   ax=ax)
 
     ax.set_ylabel("Count of reads")
     ax.set_xlabel(None)
     ax.tick_params("x", labelrotation=30)
-    sns.move_legend(ax, "upper center", ncols=2, frameon=False, title="Allele", bbox_to_anchor=(.5, 1.5))
+    sns.move_legend(ax, "best", ncols=2, frameon=True, title=None)
     sns.despine()
     
     return fig.savefig("plots/all_icrs_readcount.svg")
