@@ -1,3 +1,4 @@
+[![DOI](https://zenodo.org/badge/607131331.svg)](https://doi.org/10.5281/zenodo.14753744)
 # Double and single stranded detection of 5-methylcytosine and 5-hydroxymethylcytosine with nanopore sequencing
 
 These scripts and notebooks contain code used in the analysis of nanopore sequence data for the publication: Double and single stranded detection of 5-methylcytosine and 5-hydroxymethylcytosine with nanopore sequencing (_in press_). 
