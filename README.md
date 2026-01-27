@@ -1,7 +1,7 @@
 [![DOI](https://zenodo.org/badge/607131331.svg)](https://doi.org/10.5281/zenodo.14753744)
 # Double and single stranded detection of 5-methylcytosine and 5-hydroxymethylcytosine with nanopore sequencing
 
-These scripts and notebooks contain code used in the analysis of nanopore sequence data for the publication: Double and single stranded detection of 5-methylcytosine and 5-hydroxymethylcytosine with nanopore sequencing (_in press_). 
+These scripts and notebooks contain code used in the analysis of nanopore sequence data for the publication: Halliwell, D.O., Honig, F., Bagby, S. et al. Double and single stranded detection of 5-methylcytosine and 5-hydroxymethylcytosine with nanopore sequencing. Commun Biol 8, 243 (2025). https://doi.org/10.1038/s42003-025-07681-0. 
 
 New nanopore sequence data in raw fast5 format as well as aligned bam format (aligned to mm39) has been made available on the NCBI SRA under the BioProject: PRJNA1144670. BedMethyl format data has also been uploaded to the NCBI GEO archive. 
 
